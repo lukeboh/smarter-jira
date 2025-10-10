@@ -1,4 +1,3 @@
-
 import requests
 import json
 import csv
@@ -48,13 +47,18 @@ def create_jira_issue(config, token, issue_data, verbose=False, parent_key=None)
     if assignee_email:
         payload['fields']['assignee'] = {"name": assignee_email}
 
-    # Adiciona o campo 'components' apenas para issues pais (não sub-tasks)
+    # Adiciona campos que só se aplicam a issues pais (não sub-tasks)
     if not parent_key:
         payload['fields']['components'] = [
             {
                 "name": config['default_component']
             }
         ]
+        # Adiciona o Epic Link se ele existir no CSV
+        epic_link = issue_data.get('Epic Link')
+        if epic_link:
+            # O nome do campo para a API do Jira é geralmente 'Epic Link'
+            payload['fields']['Epic Link'] = epic_link
 
     # Adiciona o link de parent para sub-tasks
     if parent_key and issue_data['Issue Type'].lower() in ['sub-task', 'subtarefa']:
@@ -76,7 +80,7 @@ def create_jira_issue(config, token, issue_data, verbose=False, parent_key=None)
         print(f"Resposta: {response.text}")
         return None
 
-def process_csv(config_file, csv_file, verbose=False):
+def process_csv(config_file, csv_file, verbose=False, ignore_epics=False):
     """Processa o arquivo CSV e cria as issues."""
     config = load_config(config_file)
     if not config:
@@ -104,6 +108,11 @@ def process_csv(config_file, csv_file, verbose=False):
             row = {k.strip(): v for k, v in row.items()}
 
             if not row.get('Parent ID'):
+                # Validação do Epic Link para issues principais
+                if not ignore_epics and not row.get('Epic Link'):
+                    print(f"Erro: O Epic Link é obrigatório para a issue '{row['Summary']}'. Use --ignore-epics para desabilitar esta verificação.")
+                    return # Interrompe o processo
+
                 print(f"Criando issue principal: '{row['Summary']}'")
                 created_issue = create_jira_issue(config, token, row, verbose=verbose)
                 if created_issue:
@@ -133,8 +142,9 @@ if __name__ == "__main__":
     parser.add_argument('-c', '--config', type=str, required=True, help='Caminho para o arquivo de configuração JSON.')
     parser.add_argument('--csv', type=str, required=True, help='Caminho para o arquivo CSV com as issues.')
     parser.add_argument('-v', '--verbose', action='store_true', help='Exibe o payload JSON enviado para a API do Jira.')
+    parser.add_argument('-i', '--ignore-epics', action='store_true', help='Ignora a verificação de Epic Link obrigatório.')
     args = parser.parse_args()
 
     print("Iniciando processo de criação de issues no Jira...")
-    process_csv(config_file=args.config, csv_file=args.csv, verbose=args.verbose)
+    process_csv(config_file=args.config, csv_file=args.csv, verbose=args.verbose, ignore_epics=args.ignore_epics)
     print("Processo finalizado.")
