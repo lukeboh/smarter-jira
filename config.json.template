@@ -1,0 +1,7 @@
+{
+    "jira_server": "https://your-jira-instance.com/",
+    "default_project": "PROJKEY",
+    "default_reporter": "user@example.com",
+    "default_component": "MyComponent",
+    "default_customfield_10247": "OptionValue"
+}

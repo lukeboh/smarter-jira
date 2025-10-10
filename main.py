@@ -1,33 +1,30 @@
+
 import requests
 import json
 import csv
 import os
 import argparse
 
-# --- Configurações ---
-CONFIG_FILE = 'config.json'
-TOKEN_FILE = 'token.txt'
-CSV_FILE = 'sample_issues.csv'
-
 # --- Funções ---
 
-def load_config():
-    """Carrega as configurações do arquivo JSON."""
-    if not os.path.exists(CONFIG_FILE):
-        print(f"Erro: Arquivo de configuração '{CONFIG_FILE}' não encontrado.")
+def load_config(config_path):
+    """Carrega as configurações do arquivo JSON especificado."""
+    if not os.path.exists(config_path):
+        print(f"Erro: Arquivo de configuração '{config_path}' não encontrado.")
         return None
-    with open(CONFIG_FILE, 'r') as f:
+    with open(config_path, 'r') as f:
         return json.load(f)
 
 def load_token():
     """Carrega o token de autenticação."""
-    if not os.path.exists(TOKEN_FILE):
-        print(f"Erro: Arquivo de token '{TOKEN_FILE}' não encontrado.")
+    token_file = 'token.txt'
+    if not os.path.exists(token_file):
+        print(f"Erro: Arquivo de token '{token_file}' não encontrado.")
         return None
-    with open(TOKEN_FILE, 'r') as f:
+    with open(token_file, 'r') as f:
         token = f.read().strip()
         if "COLOQUE_SEU_TOKEN" in token:
-            print(f"AVISO: Por favor, substitua o conteúdo de '{TOKEN_FILE}' pelo seu token de API do Jira.")
+            print(f"AVISO: Por favor, substitua o conteúdo de '{token_file}' pelo seu token de API do Jira.")
             return None
         return token
 
@@ -85,22 +82,22 @@ def create_jira_issue(config, token, issue_data, verbose=False, parent_key=None)
         print(f"Resposta: {response.text}")
         return None
 
-def process_csv(verbose=False):
+def process_csv(config_file, csv_file, verbose=False):
     """Processa o arquivo CSV e cria as issues."""
-    config = load_config()
+    config = load_config(config_file)
     token = load_token()
 
     if not config or not token:
         print("Processo interrompido devido a erro de configuração ou token.")
         return
 
-    if not os.path.exists(CSV_FILE):
-        print(f"Erro: Arquivo CSV '{CSV_FILE}' não encontrado.")
+    if not os.path.exists(csv_file):
+        print(f"Erro: Arquivo CSV '{csv_file}' não encontrado.")
         return
 
     parent_issue_map = {} # Mapeia o ID do CSV para a chave da issue criada no Jira
 
-    with open(CSV_FILE, mode='r', encoding='utf-8') as csvfile:
+    with open(csv_file, mode='r', encoding='utf-8') as csvfile:
         reader = csv.DictReader(csvfile)
         
         issues_to_process = list(reader)
@@ -130,9 +127,11 @@ def process_csv(verbose=False):
 # --- Ponto de Entrada ---
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Cria issues no Jira a partir de um arquivo CSV.")
+    parser.add_argument('-c', '--config', type=str, required=True, help='Caminho para o arquivo de configuração JSON.')
+    parser.add_argument('-csv', type=str, required=True, help='Caminho para o arquivo CSV com as issues.')
     parser.add_argument('-v', '--verbose', action='store_true', help='Exibe o payload JSON enviado para a API do Jira.')
     args = parser.parse_args()
 
     print("Iniciando processo de criação de issues no Jira...")
-    process_csv(verbose=args.verbose)
+    process_csv(config_file=args.config, csv_file=args.csv, verbose=args.verbose)
     print("Processo finalizado.")

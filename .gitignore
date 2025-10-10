@@ -8,3 +8,7 @@ __pycache__/
 # Ambientes virtuais
 .venv/
 venv/
+
+# Ignorar arquivos de configuração e dados locais
+*.json
+*.csv
