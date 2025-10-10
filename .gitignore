@@ -1,0 +1,10 @@
+# Arquivo de Token
+token.txt
+
+# Cache do Python
+__pycache__/
+*.pyc
+
+# Ambientes virtuais
+.venv/
+venv/
