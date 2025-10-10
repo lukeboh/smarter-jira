@@ -1,4 +1,3 @@
-
 import requests
 import json
 import csv
@@ -141,7 +140,6 @@ def process_deletion(config, token, csv_file, log_writer):
         reader = csv.DictReader(f)
         rows_to_delete = list(reader)
     
-    # Inverte a lista para deletar subtarefas antes das tarefas principais
     rows_to_delete.reverse()
 
     for row in rows_to_delete:
@@ -150,7 +148,7 @@ def process_deletion(config, token, csv_file, log_writer):
             print(f"Deletando issue: {issue_key}")
             if delete_jira_issue(issue_key, config, token):
                 log_data = [row.get(h) for h in LOG_HEADERS]
-                log_data[1] = 'D' # Atualiza a ação para Deletado
+                log_data[1] = 'D'
                 log_writer.writerow(log_data)
         else:
             print(f"Aviso: linha ignorada no arquivo de log por não conter 'issue_key': {row}")
@@ -166,7 +164,7 @@ if __name__ == "__main__":
     parser.add_argument('--action', type=str, choices=['create', 'delete', 'update'], default='create', help='Ação a ser executada.')
     parser.add_argument('-c', '--config', type=str, required=True, help='Caminho para o arquivo de configuração JSON.')
     parser.add_argument('--csv', type=str, required=True, help='Caminho para o arquivo CSV de entrada.')
-    parser.add_argument('--logfile', type=str, help='Nome do arquivo de log de saída. Padrão: execution_log_TIMESTAMP.csv')
+    parser.add_argument('--logfile', type=str, help='Nome do arquivo de log de saída. Padrão: NOME_DO_CSV_log_TIMESTAMP.csv')
     parser.add_argument('-v', '--verbose', action='store_true', help='Exibe o payload JSON enviado para a API do Jira.')
     parser.add_argument('-i', '--ignore-epics', action='store_true', help='Ignora a verificação de Epic Link obrigatório na criação.')
     args = parser.parse_args()
@@ -180,7 +178,13 @@ if __name__ == "__main__":
         print("Erro: Token do Jira não encontrado ou não configurado no arquivo de configuração JSON.")
         exit(1)
 
-    log_filename = args.logfile or f"execution_log_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.csv"
+    # Configura o nome do arquivo de log
+    if args.logfile:
+        log_filename = args.logfile
+    else:
+        base_name = os.path.splitext(os.path.basename(args.csv))[0]
+        timestamp = datetime.now().strftime('%Y-%m-%d_%H%M%S')
+        log_filename = f"{base_name}_log_{timestamp}.csv"
     
     try:
         with open(log_filename, 'w', newline='', encoding='utf-8') as logfile:
