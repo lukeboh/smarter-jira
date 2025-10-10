@@ -1,6 +1,7 @@
 {
     "jira_server": "https://your-jira-instance.com/",
     "jira_token": "YOUR_JIRA_API_TOKEN",
+    "epic_link_field_id": "customfield_10014",
     "default_project": "PROJKEY",
     "default_reporter": "user@example.com",
     "default_assignee": "user@example.com",
