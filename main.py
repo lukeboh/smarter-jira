@@ -1,4 +1,3 @@
-
 import requests
 import json
 import csv
@@ -37,6 +36,10 @@ def create_jira_issue(config, token, issue_data, verbose=False, parent_key=None)
         "Content-Type": "application/json"
     }
 
+    # Lógica de fallback para reporter e assignee
+    reporter_email = issue_data.get('Reporter') or config['default_reporter']
+    assignee_email = issue_data.get('Assignee') or config.get('default_assignee')
+
     payload = {
         "fields": {
             "project": {
@@ -48,11 +51,14 @@ def create_jira_issue(config, token, issue_data, verbose=False, parent_key=None)
                 "name": issue_data['Issue Type']
             },
             "reporter": {
-                "name": config['default_reporter']
+                "name": reporter_email
             },
             "customfield_10247": { "value": config['default_customfield_10247'] }
         }
     }
+
+    if assignee_email:
+        payload['fields']['assignee'] = {"name": assignee_email}
 
     # Adiciona o campo 'components' apenas para issues pais (não sub-tasks)
     if not parent_key:
@@ -103,6 +109,9 @@ def process_csv(config_file, csv_file, verbose=False):
         issues_to_process = list(reader)
         
         for row in issues_to_process:
+            # Normaliza os nomes das colunas (remove espaços em branco)
+            row = {k.strip(): v for k, v in row.items()}
+
             if not row.get('Parent ID'):
                 print(f"Criando issue principal: '{row['Summary']}'")
                 created_issue = create_jira_issue(config, token, row, verbose=verbose)
@@ -113,6 +122,9 @@ def process_csv(config_file, csv_file, verbose=False):
                     print(f"  -> Falha ao criar a issue principal.")
 
         for row in issues_to_process:
+            # Normaliza os nomes das colunas (remove espaços em branco)
+            row = {k.strip(): v for k, v in row.items()}
+            
             parent_id = row.get('Parent ID')
             if parent_id and parent_id in parent_issue_map:
                 parent_key = parent_issue_map[parent_id]
@@ -128,7 +140,7 @@ def process_csv(config_file, csv_file, verbose=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Cria issues no Jira a partir de um arquivo CSV.")
     parser.add_argument('-c', '--config', type=str, required=True, help='Caminho para o arquivo de configuração JSON.')
-    parser.add_argument('-csv', type=str, required=True, help='Caminho para o arquivo CSV com as issues.')
+    parser.add_argument('--csv', type=str, required=True, help='Caminho para o arquivo CSV com as issues.')
     parser.add_argument('-v', '--verbose', action='store_true', help='Exibe o payload JSON enviado para a API do Jira.')
     args = parser.parse_args()
 

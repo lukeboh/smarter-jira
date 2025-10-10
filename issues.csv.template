@@ -1,4 +1,4 @@
-Issue ID,Parent ID,Summary,Description,Issue Type
-1,,Esta é a tarefa principal,Descrição detalhada da tarefa principal.,Task
-2,1,Primeira subtarefa,Descrição da primeira subtarefa.,Sub-task
-3,1,Segunda subtarefa,Descrição da segunda subtarefa.,Sub-task
+Issue ID,Parent ID,Summary,Description,Issue Type,Reporter,Assignee
+1,,Esta é a tarefa principal,Descrição detalhada da tarefa principal.,Task,,
+2,1,Primeira subtarefa,Descrição da primeira subtarefa.,Sub-task,user1@example.com,
+3,1,Segunda subtarefa,Descrição da segunda subtarefa.,Sub-task,,user2@example.com
