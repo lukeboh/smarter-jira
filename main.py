@@ -1,3 +1,4 @@
+
 import requests
 import json
 import csv
@@ -22,10 +23,7 @@ def load_config(config_path):
 def create_jira_issue(config, token, issue_data, verbose=False, parent_key=None):
     """Cria uma issue no Jira."""
     api_url = f"{config['jira_server']}rest/api/2/issue"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
-    }
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
     reporter_email = issue_data.get('Reporter') or config['default_reporter']
     assignee_email = issue_data.get('Assignee') or config.get('default_assignee')
@@ -37,14 +35,14 @@ def create_jira_issue(config, token, issue_data, verbose=False, parent_key=None)
             "summary": issue_data['Summary'],
             "description": issue_data['Description'],
             "issuetype": {"name": issue_data['Issue Type']},
-            "reporter": {"name": reporter_username},
-            "customfield_10247": {"value": config['default_customfield_10247']}
+            "reporter": {"name": reporter_username}
         }
     }
 
     if assignee_email:
-        assignee_username = assignee_email.split('@')[0]
-        payload['fields']['assignee'] = {"name": assignee_username}
+        payload['fields']['assignee'] = {"name": assignee_email.split('@')[0]}
+    if config.get('default_customfield_10247'):
+        payload['fields']['customfield_10247'] = {"value": config['default_customfield_10247']}
 
     if not parent_key:
         payload['fields']['components'] = [{"name": config['default_component']}]
@@ -52,23 +50,47 @@ def create_jira_issue(config, token, issue_data, verbose=False, parent_key=None)
         epic_link_field_id = config.get('epic_link_field_id')
         if epic_link_key and epic_link_field_id:
             payload['fields'][epic_link_field_id] = epic_link_key
-
-    if parent_key:
+    else:
         payload['fields']['parent'] = {"key": parent_key}
 
     if verbose:
-        print("--- PAYLOAD ENVIADO PARA O JIRA ---")
-        print(json.dumps(payload, indent=4))
-        print("----------------------------------")
+        print(f"--- PAYLOAD (CREATE) ---\n{json.dumps(payload, indent=4)}\n--------------------------")
 
     response = requests.post(api_url, headers=headers, data=json.dumps(payload))
 
     if response.status_code == 201:
         return response.json()
     else:
-        print(f"Erro ao criar issue '{issue_data['Summary']}'. Status: {response.status_code}")
-        print(f"Resposta: {response.text}")
+        print(f"Erro ao criar issue '{issue_data['Summary']}'. Status: {response.status_code}\nResposta: {response.text}")
         return None
+
+def update_jira_issue(issue_key, config, token, issue_data, verbose=False):
+    """Atualiza uma issue no Jira."""
+    api_url = f"{config['jira_server']}rest/api/2/issue/{issue_key}"
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+    fields_to_update = {}
+    # Apenas o assignee pode ser atualizado por enquanto, conforme solicitado
+    assignee_email = issue_data.get('Assignee') or config.get('default_assignee')
+    if assignee_email:
+        fields_to_update['assignee'] = {"name": assignee_email.split('@')[0]}
+
+    if not fields_to_update:
+        print(f"Aviso: Nenhum campo para atualizar para a issue {issue_key}")
+        return True # Considera sucesso pois não há nada a fazer
+
+    payload = {"fields": fields_to_update}
+
+    if verbose:
+        print(f"--- PAYLOAD (UPDATE) ---\n{json.dumps(payload, indent=4)}\n--------------------------")
+
+    response = requests.put(api_url, headers=headers, data=json.dumps(payload))
+
+    if response.status_code == 204:
+        return True
+    else:
+        print(f"Erro ao atualizar issue {issue_key}. Status: {response.status_code}\nResposta: {response.text}")
+        return False
 
 def delete_jira_issue(issue_key, config, token):
     """Deleta uma issue no Jira."""
@@ -79,27 +101,22 @@ def delete_jira_issue(issue_key, config, token):
         print(f"Sucesso ao deletar issue {issue_key}.")
         return True
     else:
-        print(f"Erro ao deletar issue {issue_key}. Status: {response.status_code}")
-        print(f"Resposta: {response.text}")
+        print(f"Erro ao deletar issue {issue_key}. Status: {response.status_code}\nResposta: {response.text}")
         return False
 
 # --- Funções de Processamento ---
 
 def get_row_data_for_log(row):
-    """Extrai os dados da linha do CSV na ordem correta para o log."""
-    return [row.get(h) for h in LOG_HEADERS[2:]] # Pula issue_key e action
+    return [row.get(h) for h in LOG_HEADERS[2:]]
 
 def process_creation(config, token, csv_file, log_writer, verbose=False, ignore_epics=False):
-    """Processa o arquivo CSV para criar as issues."""
     if not os.path.exists(csv_file):
         print(f"Erro: Arquivo CSV '{csv_file}' não encontrado.")
         return
-
     parent_issue_map = {}
     with open(csv_file, mode='r', encoding='utf-8') as f:
         reader = csv.DictReader(f)
         issues_to_process = list(reader)
-
     for row in issues_to_process:
         row = {k.strip(): v for k, v in row.items()}
         if not row.get('Parent ID'):
@@ -115,7 +132,6 @@ def process_creation(config, token, csv_file, log_writer, verbose=False, ignore_
                 print(f"  -> Sucesso! Chave da Issue: {key}")
             else:
                 print(f"  -> Falha ao criar a issue principal.")
-
     for row in issues_to_process:
         row = {k.strip(): v for k, v in row.items()}
         parent_id = row.get('Parent ID')
@@ -131,17 +147,13 @@ def process_creation(config, token, csv_file, log_writer, verbose=False, ignore_
                 print(f"  -> Falha ao criar a sub-task.")
 
 def process_deletion(config, token, csv_file, log_writer):
-    """Processa um arquivo de log para deletar issues, na ordem inversa."""
     if not os.path.exists(csv_file):
         print(f"Erro: Arquivo de log CSV '{csv_file}' não encontrado.")
         return
-
     with open(csv_file, mode='r', encoding='utf-8') as f:
         reader = csv.DictReader(f)
         rows_to_delete = list(reader)
-    
     rows_to_delete.reverse()
-
     for row in rows_to_delete:
         issue_key = row.get('issue_key')
         if issue_key:
@@ -153,9 +165,23 @@ def process_deletion(config, token, csv_file, log_writer):
         else:
             print(f"Aviso: linha ignorada no arquivo de log por não conter 'issue_key': {row}")
 
-def process_update(config, token, csv_file, log_writer):
+def process_update(config, token, csv_file, log_writer, verbose=False):
     """Processa um arquivo de log para atualizar issues."""
-    print("A funcionalidade de 'update' ainda não foi implementada.")
+    if not os.path.exists(csv_file):
+        print(f"Erro: Arquivo CSV '{csv_file}' não encontrado.")
+        return
+    with open(csv_file, mode='r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            issue_key = row.get('issue_key')
+            if issue_key:
+                print(f"Atualizando issue: {issue_key}")
+                if update_jira_issue(issue_key, config, token, row, verbose=verbose):
+                    log_data = [row.get(h) for h in LOG_HEADERS]
+                    log_data[1] = 'U'
+                    log_writer.writerow(log_data)
+            else:
+                print(f"Aviso: linha ignorada por não conter 'issue_key': {row}")
 
 # --- Ponto de Entrada ---
 
@@ -178,13 +204,7 @@ if __name__ == "__main__":
         print("Erro: Token do Jira não encontrado ou não configurado no arquivo de configuração JSON.")
         exit(1)
 
-    # Configura o nome do arquivo de log
-    if args.logfile:
-        log_filename = args.logfile
-    else:
-        base_name = os.path.splitext(os.path.basename(args.csv))[0]
-        timestamp = datetime.now().strftime('%Y-%m-%d_%H%M%S')
-        log_filename = f"{base_name}_log_{timestamp}.csv"
+    log_filename = args.logfile or f"{os.path.splitext(os.path.basename(args.csv))[0]}_log_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.csv"
     
     try:
         with open(log_filename, 'w', newline='', encoding='utf-8') as logfile:
@@ -199,7 +219,7 @@ if __name__ == "__main__":
             elif args.action == 'delete':
                 process_deletion(config, token, args.csv, log_writer)
             elif args.action == 'update':
-                process_update(config, token, args.csv, log_writer)
+                process_update(config, token, args.csv, log_writer, verbose=args.verbose)
 
             print("Processo finalizado.")
 
