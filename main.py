@@ -1,3 +1,4 @@
+
 import requests
 import json
 import csv
@@ -13,19 +14,6 @@ def load_config(config_path):
         return None
     with open(config_path, 'r') as f:
         return json.load(f)
-
-def load_token():
-    """Carrega o token de autenticação."""
-    token_file = 'token.txt'
-    if not os.path.exists(token_file):
-        print(f"Erro: Arquivo de token '{token_file}' não encontrado.")
-        return None
-    with open(token_file, 'r') as f:
-        token = f.read().strip()
-        if "COLOQUE_SEU_TOKEN" in token:
-            print(f"AVISO: Por favor, substitua o conteúdo de '{token_file}' pelo seu token de API do Jira.")
-            return None
-        return token
 
 def create_jira_issue(config, token, issue_data, verbose=False, parent_key=None):
     """Cria uma issue no Jira."""
@@ -91,10 +79,13 @@ def create_jira_issue(config, token, issue_data, verbose=False, parent_key=None)
 def process_csv(config_file, csv_file, verbose=False):
     """Processa o arquivo CSV e cria as issues."""
     config = load_config(config_file)
-    token = load_token()
+    if not config:
+        print("Processo interrompido devido a erro de configuração.")
+        return
 
-    if not config or not token:
-        print("Processo interrompido devido a erro de configuração ou token.")
+    token = config.get("jira_token")
+    if not token or "YOUR_JIRA_API_TOKEN" in token:
+        print("Erro: Token do Jira não encontrado ou não configurado no arquivo de configuração JSON.")
         return
 
     if not os.path.exists(csv_file):
