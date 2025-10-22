@@ -113,10 +113,25 @@ def process_creation(config, token, csv_file, log_writer, verbose=False, ignore_
     if not os.path.exists(csv_file):
         print(f"Erro: Arquivo CSV '{csv_file}' não encontrado.")
         return
-    parent_issue_map = {}
+
     with open(csv_file, mode='r', encoding='utf-8') as f:
         reader = csv.DictReader(f)
         issues_to_process = list(reader)
+
+    # Mapa para relacionar ID temporário do CSV com a chave da issue criada no Jira
+    parent_issue_map = {}
+    # Conjunto de IDs de issues a serem criadas a partir do CSV
+    csv_issue_ids = {row['Issue ID'] for row in issues_to_process if 'Issue ID' in row}
+
+    # Pré-popula o mapa com Parent IDs que já são chaves de issues existentes no Jira
+    for row in issues_to_process:
+        row = {k.strip(): v for k, v in row.items()}
+        parent_id = row.get('Parent ID', '').strip()
+        if parent_id and parent_id not in csv_issue_ids:
+            parent_issue_map[parent_id] = parent_id
+            print(f"Info: Issue pai '{parent_id}' será usada a partir de uma issue existente no Jira.")
+
+    # 1. Cria as issues principais (pais)
     for row in issues_to_process:
         row = {k.strip(): v for k, v in row.items()}
         if not row.get('Parent ID'):
@@ -132,6 +147,8 @@ def process_creation(config, token, csv_file, log_writer, verbose=False, ignore_
                 print(f"  -> Sucesso! Chave da Issue: {key}")
             else:
                 print(f"  -> Falha ao criar a issue principal.")
+
+    # 2. Cria as sub-tasks
     for row in issues_to_process:
         row = {k.strip(): v for k, v in row.items()}
         parent_id = row.get('Parent ID')
