@@ -116,24 +116,13 @@ def process_creation(config, token, csv_file, log_writer, verbose=False, ignore_
 
     with open(csv_file, mode='r', encoding='utf-8') as f:
         reader = csv.DictReader(f)
-        issues_to_process = list(reader)
+        # Limpa os nomes dos campos e valores de imediato
+        issues_to_process = [{k.strip(): v.strip() for k, v in row.items()} for row in reader]
 
-    # Mapa para relacionar ID temporário do CSV com a chave da issue criada no Jira
     parent_issue_map = {}
-    # Conjunto de IDs de issues a serem criadas a partir do CSV
-    csv_issue_ids = {row['Issue ID'] for row in issues_to_process if 'Issue ID' in row}
-
-    # Pré-popula o mapa com Parent IDs que já são chaves de issues existentes no Jira
-    for row in issues_to_process:
-        row = {k.strip(): v for k, v in row.items()}
-        parent_id = row.get('Parent ID', '').strip()
-        if parent_id and parent_id not in csv_issue_ids:
-            parent_issue_map[parent_id] = parent_id
-            print(f"Info: Issue pai '{parent_id}' será usada a partir de uma issue existente no Jira.")
 
     # 1. Cria as issues principais (pais)
     for row in issues_to_process:
-        row = {k.strip(): v for k, v in row.items()}
         if not row.get('Parent ID'):
             if not ignore_epics and not row.get('Epic Link'):
                 print(f"Erro: O Epic Link é obrigatório para a issue '{row['Summary']}'. Use --ignore-epics para desabilitar.")
@@ -142,7 +131,8 @@ def process_creation(config, token, csv_file, log_writer, verbose=False, ignore_
             created_issue = create_jira_issue(config, token, row, verbose=verbose)
             if created_issue:
                 key = created_issue['key']
-                parent_issue_map[row['Issue ID']] = key
+                if row.get('Issue ID'):
+                    parent_issue_map[row['Issue ID']] = key
                 log_writer.writerow([key, 'C'] + get_row_data_for_log(row))
                 print(f"  -> Sucesso! Chave da Issue: {key}")
             else:
@@ -150,10 +140,26 @@ def process_creation(config, token, csv_file, log_writer, verbose=False, ignore_
 
     # 2. Cria as sub-tasks
     for row in issues_to_process:
-        row = {k.strip(): v for k, v in row.items()}
         parent_id = row.get('Parent ID')
-        if parent_id and parent_id in parent_issue_map:
-            parent_key = parent_issue_map[parent_id]
+        if parent_id:
+            parent_key = parent_issue_map.get(parent_id)
+
+            # Tentativa de encontrar a chave pai para IDs que parecem números (ex: "1" vs "1.0")
+            if not parent_key:
+                try:
+                    normalized_id = str(int(float(parent_id)))
+                    if normalized_id != parent_id:
+                        potential_key = parent_issue_map.get(normalized_id)
+                        if potential_key:
+                            print(f"Aviso: A coluna Parent ID da linha '{row.get('Summary', '')}' ('{parent_id}') está com formato inadequado e será considerada apenas a parte inteira ('{normalized_id}') para identificação da issue pai.")
+                            parent_key = potential_key
+                except (ValueError, TypeError):
+                    pass # Ignora se não for um número
+
+            if not parent_key:
+                parent_key = parent_id
+                print(f"Info: Issue pai '{parent_key}' será usada a partir de uma issue existente no Jira.")
+
             print(f"Criando sub-task '{row['Summary']}' para a issue pai {parent_key}")
             created_issue = create_jira_issue(config, token, row, verbose=verbose, parent_key=parent_key)
             if created_issue:
