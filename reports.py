@@ -29,7 +29,7 @@ def get_issues(client, start_date, end_date, project_key):
     issues = client.search_issues(jql_query, maxResults=False, fields="assignee,components,summary")
     return issues
 
-def generate_report(issues, config):
+def generate_report(issues, config, show_as_percent=False):
     """Gera um relatório em formato de tabela a partir das issues."""
     
     components_str = config.get('components_to_track', '')
@@ -41,7 +41,6 @@ def generate_report(issues, config):
         if issue.fields.assignee:
             assignee = issue.fields.assignee.displayName
 
-        # Se não estamos rastreando componentes, conta cada um deles (comportamento antigo)
         if not tracked_components_ordered:
             if not issue.fields.components:
                 data.append({"responsavel": assignee, "componente": "Sem Componente"})
@@ -50,22 +49,15 @@ def generate_report(issues, config):
                     data.append({"responsavel": assignee, "componente": c.name})
             continue
 
-        # --- Nova Lógica de Contagem Única com Prioridade ---
-        
-        assigned_category = "Outros Componentes" # Padrão
-        
+        assigned_category = "Outros Componentes"
         if issue.fields.components:
             issue_components_set = {c.name for c in issue.fields.components}
-            
-            # Itera na ordem de prioridade do usuário para encontrar a primeira correspondência
             for tracked_comp in tracked_components_ordered:
                 if tracked_comp in issue_components_set:
                     assigned_category = tracked_comp
-                    break # Encontrou, então para de procurar
+                    break
         
-        # Adiciona apenas um registro por issue
         data.append({"responsavel": assignee, "componente": assigned_category})
-
 
     if not data:
         print("Nenhuma issue concluída encontrada para o período especificado.")
@@ -74,25 +66,47 @@ def generate_report(issues, config):
     df = pd.DataFrame(data)
     pivot_table = pd.crosstab(df['responsavel'], df['componente'])
 
-    # Reordena as colunas se 'components_to_track' estiver definido
     if tracked_components_ordered:
         final_column_order = [col for col in tracked_components_ordered if col in pivot_table.columns]
-        
         if "Outros Componentes" in pivot_table.columns:
             final_column_order.append("Outros Componentes")
-        
         for col in pivot_table.columns:
             if col not in final_column_order:
                 final_column_order.append(col)
-        
         pivot_table = pivot_table[final_column_order]
 
-    # Adiciona a coluna Total no final
     pivot_table['Total'] = pivot_table.sum(axis=1)
     pivot_table.loc['Total'] = pivot_table.sum()
 
-    print("--- Relatório de Tarefas Concluídas por Responsável e Componente ---")
-    print(pivot_table)
+    if not show_as_percent:
+        print("--- Relatório de Tarefas Concluídas por Responsável e Componente (Contagem) ---")
+        print(pivot_table)
+    else:
+        # Calcula percentuais
+        percent_df = pivot_table.drop('Total').astype(float) # Dropa a linha Total para não dividir por zero
+        row_totals = percent_df['Total']
+        
+        # Evita divisão por zero se uma linha inteira for 0
+        row_totals[row_totals == 0] = 1 
+
+        percent_df = percent_df.drop(columns='Total').div(row_totals, axis=0) * 100
+        percent_df['Total'] = 100.0
+
+        # Calcula a linha de total percentual
+        grand_total = pivot_table.loc['Total', 'Total']
+        if grand_total > 0:
+            total_row_percent = (pivot_table.loc['Total'] / grand_total) * 100
+        else:
+            total_row_percent = pivot_table.loc['Total'] * 0
+
+        percent_df.loc['Total'] = total_row_percent
+        
+        # Formata todo o dataframe
+        formatted_df = percent_df.applymap(lambda x: f"{x:.1f}%")
+        
+        print("--- Relatório de Tarefas Concluídas por Responsável e Componente (Percentual) ---")
+        print(formatted_df)
+        
     print("-" * 70)
 
 
@@ -117,14 +131,19 @@ if __name__ == "__main__":
         help='Data de fim do período (formato: YYYY-MM-DD).'
     )
     parser.add_argument(
-        '--month', 
-        type=int, 
+        '--month',
+        type=int,
         help='Mês numérico (1-12) para gerar o relatório. Requer --year.'
     )
     parser.add_argument(
-        '--year', 
-        type=int, 
+        '--year',
+        type=int,
         help='Ano para gerar o relatório. Usado com --month ou para o ano inteiro.'
+    )
+    parser.add_argument(
+        '--percent',
+        action='store_true',
+        help='Exibe os resultados em formato percentual em vez de contagem.'
     )
 
     args = parser.parse_args()
@@ -179,7 +198,7 @@ if __name__ == "__main__":
 
         issues = get_issues(jira_client, start_date_str, end_date_str, project_key)
         
-        generate_report(issues, config)
+        generate_report(issues, config, args.percent)
 
     except Exception as e:
         print(f"Ocorreu um erro ao conectar ao Jira ou buscar issues: {e}")
