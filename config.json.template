@@ -6,5 +6,6 @@
     "default_reporter": "user@example.com",
     "default_assignee": "user@example.com",
     "default_component": "MyComponent",
-    "default_customfield_10247": "OptionValue"
+    "default_customfield_10247": "OptionValue",
+    "components_to_track": "component_X,component_Y"
 }

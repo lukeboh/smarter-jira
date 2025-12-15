@@ -1,4 +1,3 @@
-
 import argparse
 import json
 import os
@@ -19,7 +18,6 @@ def load_config(config_path):
 def get_issues(client, start_date, end_date, project_key):
     """Busca issues concluídas no Jira dentro de um período para um projeto."""
     
-    # Status de concluído em português e inglês
     jql_query = (
         f"project = '{project_key}' AND "
         f"status IN (FECHADO, RESOLVIDO) AND "
@@ -28,36 +26,68 @@ def get_issues(client, start_date, end_date, project_key):
     
     print(f"Executando JQL:\n{jql_query}\n")
     
-    # Busca issues, maxResults=False para buscar todos os resultados
     issues = client.search_issues(jql_query, maxResults=False, fields="assignee,components,summary")
     return issues
 
-def generate_report(issues):
+def generate_report(issues, config):
     """Gera um relatório em formato de tabela a partir das issues."""
+    
+    components_str = config.get('components_to_track', '')
+    tracked_components_ordered = [comp.strip() for comp in components_str.split(',') if comp.strip()]
+    
     data = []
     for issue in issues:
         assignee = "Não atribuído"
         if issue.fields.assignee:
             assignee = issue.fields.assignee.displayName
 
-        components = ["Sem Componente"]
-        if issue.fields.components:
-            components = [c.name for c in issue.fields.components]
+        # Se não estamos rastreando componentes, conta cada um deles (comportamento antigo)
+        if not tracked_components_ordered:
+            if not issue.fields.components:
+                data.append({"responsavel": assignee, "componente": "Sem Componente"})
+            else:
+                for c in issue.fields.components:
+                    data.append({"responsavel": assignee, "componente": c.name})
+            continue
+
+        # --- Nova Lógica de Contagem Única com Prioridade ---
         
-        # Se uma issue tem múltiplos componentes, ela conta para cada um deles
-        for component in components:
-            data.append({"responsavel": assignee, "componente": component})
+        assigned_category = "Outros Componentes" # Padrão
+        
+        if issue.fields.components:
+            issue_components_set = {c.name for c in issue.fields.components}
+            
+            # Itera na ordem de prioridade do usuário para encontrar a primeira correspondência
+            for tracked_comp in tracked_components_ordered:
+                if tracked_comp in issue_components_set:
+                    assigned_category = tracked_comp
+                    break # Encontrou, então para de procurar
+        
+        # Adiciona apenas um registro por issue
+        data.append({"responsavel": assignee, "componente": assigned_category})
+
 
     if not data:
         print("Nenhuma issue concluída encontrada para o período especificado.")
         return
 
     df = pd.DataFrame(data)
-
-    # Cria a tabela pivô: responsáveis nas linhas, componentes nas colunas
     pivot_table = pd.crosstab(df['responsavel'], df['componente'])
 
-    # Adiciona totais
+    # Reordena as colunas se 'components_to_track' estiver definido
+    if tracked_components_ordered:
+        final_column_order = [col for col in tracked_components_ordered if col in pivot_table.columns]
+        
+        if "Outros Componentes" in pivot_table.columns:
+            final_column_order.append("Outros Componentes")
+        
+        for col in pivot_table.columns:
+            if col not in final_column_order:
+                final_column_order.append(col)
+        
+        pivot_table = pivot_table[final_column_order]
+
+    # Adiciona a coluna Total no final
     pivot_table['Total'] = pivot_table.sum(axis=1)
     pivot_table.loc['Total'] = pivot_table.sum()
 
@@ -108,7 +138,6 @@ if __name__ == "__main__":
         print("Erro: Token do Jira não encontrado ou não configurado no arquivo de configuração JSON.")
         exit(1)
 
-    # Determina o período
     start_date_str = ""
     end_date_str = ""
 
@@ -133,7 +162,6 @@ if __name__ == "__main__":
 
     print(f"Gerando relatório para o período de {start_date_str} a {end_date_str}...")
 
-    # Conecta ao Jira
     try:
         jira_client = JIRA(
             server=config['jira_server'],
@@ -149,11 +177,9 @@ if __name__ == "__main__":
             print("Erro: 'default_project' não definido no arquivo de configuração.")
             exit(1)
 
-        # Busca as issues
         issues = get_issues(jira_client, start_date_str, end_date_str, project_key)
         
-        # Gera e exibe o relatório
-        generate_report(issues)
+        generate_report(issues, config)
 
     except Exception as e:
         print(f"Ocorreu um erro ao conectar ao Jira ou buscar issues: {e}")
