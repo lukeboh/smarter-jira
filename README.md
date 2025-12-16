@@ -95,6 +95,7 @@ O script `reports.py` analisa o histórico de tarefas no Jira e gera relatórios
 -   Gera uma tabela de tarefas concluídas, agrupadas por responsável ou, opcionalmente, por **Perfil Profissional**.
 -   Ao agrupar por perfil, exibe a contagem de pessoas consolidadas em cada linha na coluna `Quant. Perfil Alocado`.
 -   Permite a filtragem por um período específico (mês/ano ou datas de início/fim).
+-   Permite a busca em **todos os projetos** do Jira, não apenas no projeto padrão.
 -   Permite a seleção e ordenação de componentes de interesse através do arquivo de configuração.
 -   Agrupa tarefas de componentes não especificados em uma categoria "Outros Componentes".
 -   Garante que cada tarefa seja contada apenas uma vez, mesmo que tenha múltiplos componentes.
@@ -125,16 +126,16 @@ O `reports.py` utiliza o mesmo arquivo `config.json`. Para as funcionalidades de
 
 ### ▶️ Como Usar o `reports.py`
 
-**Exemplo 1: Relatório padrão por responsável**
+**Exemplo 1: Relatório padrão para o projeto default**
 ```bash
 python reports.py --config config.json --month 11 --year 2025
 ```
 
-**Exemplo 2: Relatório por perfil, com percentuais, exportado para Excel**
+**Exemplo 2: Relatório por perfil, para todos os projetos, exportado para Excel**
 ```bash
-python reports.py --config config.json --year 2025 --show_roles --percent --output relatorio_perfis.xlsx
+python reports.py --config config.json --year 2025 --show_roles --percent --ignore_default_project --output relatorio_geral.xlsx
 ```
-*Este comando irá gerar um arquivo Excel com 3 abas: `Contagem`, `Percentual` e `Mapeamento Roles`.*
+*Este comando irá gerar um arquivo Excel com 3 abas, buscando dados de todos os projetos.*
 
 ### Argumentos da Linha de Comando (`reports.py`)
 
@@ -148,3 +149,4 @@ python reports.py --config config.json --year 2025 --show_roles --percent --outp
 | `--percent` | Não | Exibe os resultados em formato percentual. |
 | `--output` | Não | Caminho do arquivo Excel para salvar o relatório. |
 | `--show_roles` | Não | Agrupa o relatório por perfil, exibindo a contagem de pessoas por perfil. |
+| `--ignore_default_project` | Não | Executa a consulta em todos os projetos, ignorando o `default_project` do config. |

@@ -15,14 +15,20 @@ def load_config(config_path):
     with open(config_path, 'r') as f:
         return json.load(f)
 
-def get_issues(client, start_date, end_date, project_key):
-    """Busca issues concluídas no Jira dentro de um período para um projeto."""
+def get_issues(client, start_date, end_date, project_key, ignore_project=False):
+    """Busca issues concluídas no Jira dentro de um período."""
     
-    jql_query = (
-        f"project = '{project_key}' AND "
-        f"status IN (FECHADO, RESOLVIDO) AND "
-        f"resolved >= '{start_date}' AND resolved <= '{end_date}'"
-    )
+    jql_parts = []
+    if not ignore_project and project_key:
+        jql_parts.append(f"project = '{project_key}'")
+    elif not ignore_project and not project_key:
+        print("Aviso: 'default_project' não definido no config. Buscando em todos os projetos.")
+
+    jql_parts.append("status IN (FECHADO, RESOLVIDO)")
+    jql_parts.append(f"resolved >= '{start_date}'")
+    jql_parts.append(f"resolved <= '{end_date}'")
+    
+    jql_query = " AND ".join(jql_parts)
     
     print(f"Executando JQL:\n{jql_query}\n")
     
@@ -79,7 +85,6 @@ def generate_report(issues, config, show_as_percent=False, output_file=None, sho
 
     df = pd.DataFrame(data)
     
-    # --- Criação da Tabela de Contagem ---
     if show_roles:
         role_counts = df.groupby('responsavel')['original_assignee'].nunique()
         pivot_table = pd.crosstab(df['responsavel'], df['componente'])
@@ -93,7 +98,9 @@ def generate_report(issues, config, show_as_percent=False, output_file=None, sho
         if "Outros Componentes" in pivot_table.columns and "Outros Componentes" not in task_cols_ordered:
             task_cols_ordered.append("Outros Componentes")
         
-        final_column_order = [col for col in pivot_table.columns if col not in task_cols_ordered] + task_cols_ordered
+        existing_non_task_cols = [col for col in pivot_table.columns if col not in task_cols_ordered and col != "Outros Componentes"]
+        final_column_order = existing_non_task_cols + task_cols_ordered
+        
         pivot_table = pivot_table[final_column_order]
 
     task_cols = [col for col in pivot_table.columns if col != 'Quant. Perfil Alocado']
@@ -103,11 +110,6 @@ def generate_report(issues, config, show_as_percent=False, output_file=None, sho
         total_row['Quant. Perfil Alocado'] = df['original_assignee'].nunique()
     pivot_table.loc['Total'] = total_row
 
-    # --- Preparação das Tabelas para Exibição e Exportação ---
-    
-    # Tabela de Contagem está pronta em `pivot_table`
-    
-    # Tabela de Percentual (numérica)
     percent_df = None
     if pivot_table.loc['Total', 'Total'] > 0:
         percent_calc_df = pivot_table.drop(columns=['Quant. Perfil Alocado'], errors='ignore')
@@ -121,9 +123,7 @@ def generate_report(issues, config, show_as_percent=False, output_file=None, sho
         total_row_percent = (percent_calc_df.loc['Total'] / grand_total) * 100
         percent_df.loc['Total'] = total_row_percent
 
-    # --- Exibição no Console ---
     if show_as_percent and percent_df is not None:
-        # Formata a tabela de percentual para exibição, adicionando a contagem de perfis
         formatted_df = percent_df.map(lambda x: f"{x:.1f}%")
         if 'Quant. Perfil Alocado' in pivot_table.columns:
             formatted_df.insert(0, 'Quant. Perfil Alocado', pivot_table['Quant. Perfil Alocado'])
@@ -139,13 +139,11 @@ def generate_report(issues, config, show_as_percent=False, output_file=None, sho
     if unconfigured_users:
         print("\nAviso: Foi solicitado a exibição de roles, mas os responsáveis marcados com (*) não possuem role configurada no arquivo config.")
 
-    # --- Exportação para Excel ---
     if output_file:
         try:
             with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
                 pivot_table.to_excel(writer, sheet_name='Contagem')
                 if percent_df is not None:
-                    # Adiciona a coluna de contagem de volta para a exportação do Excel
                     excel_percent_df = percent_df.copy()
                     if 'Quant. Perfil Alocado' in pivot_table.columns:
                          excel_percent_df.insert(0, 'Quant. Perfil Alocado', pivot_table['Quant. Perfil Alocado'])
@@ -163,7 +161,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Gera um relatório de tarefas concluídas no Jira por responsável e componente."
     )
-    # ... (argumentos permanecem os mesmos)
     parser.add_argument(
         '-c', '--config', 
         type=str, 
@@ -204,6 +201,11 @@ if __name__ == "__main__":
         '--show_roles',
         action='store_true',
         help='Agrupa o relatório por perfil (role) em vez de responsável individual.'
+    )
+    parser.add_argument(
+        '--ignore_default_project',
+        action='store_true',
+        help='Executa a consulta em todos os projetos, ignorando o "default_project" do config.'
     )
 
     args = parser.parse_args()
@@ -252,11 +254,8 @@ if __name__ == "__main__":
         )
         
         project_key = config.get('default_project')
-        if not project_key:
-            print("Erro: 'default_project' não definido no arquivo de configuração.")
-            exit(1)
-
-        issues = get_issues(jira_client, start_date_str, end_date_str, project_key)
+        
+        issues = get_issues(jira_client, start_date_str, end_date_str, project_key, args.ignore_default_project)
         
         generate_report(issues, config, args.percent, args.output, args.show_roles)
 
