@@ -1,11 +1,14 @@
 {
-    "jira_server": "https://your-jira-instance.com/",
-    "jira_token": "YOUR_JIRA_API_TOKEN",
-    "epic_link_field_id": "customfield_10014",
-    "default_project": "PROJKEY",
-    "default_reporter": "user@example.com",
-    "default_assignee": "user@example.com",
-    "default_component": "MyComponent",
-    "default_customfield_10247": "OptionValue",
-    "components_to_track": "component_X,component_Y"
+  "jira_server": "https://your-jira.com/",
+  "jira_token": "YOUR_JIRA_API_TOKEN",
+  "default_project": "PROJ",
+  "default_reporter": "user.name",
+  "default_assignee": "user.name",
+  "default_component": "Default Component Name",
+  "epic_link_field_id": "customfield_10000",
+  "components_to_track": "Backend,Frontend,Infra",
+
+  "role.Fulano de Tal": "Engenharia de Software - Pleno",
+  "role.Ciclana da Silva": "Engenharia de Software - Sênior",
+  "role.Beltrana Souza": "Engenharia de Teste - Pleno"
 }

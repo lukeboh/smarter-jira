@@ -29,24 +29,38 @@ def get_issues(client, start_date, end_date, project_key):
     issues = client.search_issues(jql_query, maxResults=False, fields="assignee,components,summary")
     return issues
 
-def generate_report(issues, config, show_as_percent=False, output_file=None):
+def generate_report(issues, config, show_as_percent=False, output_file=None, show_roles=False):
     """Gera um relatório em formato de tabela a partir das issues."""
     
     components_str = config.get('components_to_track', '')
     tracked_components_ordered = [comp.strip() for comp in components_str.split(',') if comp.strip()]
     
+    role_mappings = {}
+    if show_roles:
+        role_mappings = {k.replace('role.', '', 1): v for k, v in config.items() if k.startswith('role.')}
+
+    unconfigured_users = set()
     data = []
     for issue in issues:
         assignee = "Não atribuído"
         if issue.fields.assignee:
             assignee = issue.fields.assignee.displayName
 
+        report_identity = assignee
+        if show_roles:
+            role = role_mappings.get(assignee)
+            if role:
+                report_identity = role
+            elif assignee != "Não atribuído":
+                report_identity = f"*{assignee}"
+                unconfigured_users.add(assignee)
+
         if not tracked_components_ordered:
             if not issue.fields.components:
-                data.append({"responsavel": assignee, "componente": "Sem Componente"})
+                data.append({"original_assignee": assignee, "responsavel": report_identity, "componente": "Sem Componente"})
             else:
                 for c in issue.fields.components:
-                    data.append({"responsavel": assignee, "componente": c.name})
+                    data.append({"original_assignee": assignee, "responsavel": report_identity, "componente": c.name})
             continue
 
         assigned_category = "Outros Componentes"
@@ -57,63 +71,89 @@ def generate_report(issues, config, show_as_percent=False, output_file=None):
                     assigned_category = tracked_comp
                     break
         
-        data.append({"responsavel": assignee, "componente": assigned_category})
+        data.append({"original_assignee": assignee, "responsavel": report_identity, "componente": assigned_category})
 
     if not data:
         print("Nenhuma issue concluída encontrada para o período especificado.")
         return
 
     df = pd.DataFrame(data)
-    pivot_table = pd.crosstab(df['responsavel'], df['componente'])
+    
+    # --- Criação da Tabela de Contagem ---
+    if show_roles:
+        role_counts = df.groupby('responsavel')['original_assignee'].nunique()
+        pivot_table = pd.crosstab(df['responsavel'], df['componente'])
+        pivot_table.insert(0, 'Quant. Perfil Alocado', role_counts)
+        pivot_table.index.name = 'Perfil profissional'
+    else:
+        pivot_table = pd.crosstab(df['responsavel'], df['componente'])
 
     if tracked_components_ordered:
-        final_column_order = [col for col in tracked_components_ordered if col in pivot_table.columns]
-        if "Outros Componentes" in pivot_table.columns:
-            final_column_order.append("Outros Componentes")
-        for col in pivot_table.columns:
-            if col not in final_column_order:
-                final_column_order.append(col)
+        task_cols_ordered = [col for col in tracked_components_ordered if col in pivot_table.columns]
+        if "Outros Componentes" in pivot_table.columns and "Outros Componentes" not in task_cols_ordered:
+            task_cols_ordered.append("Outros Componentes")
+        
+        final_column_order = [col for col in pivot_table.columns if col not in task_cols_ordered] + task_cols_ordered
         pivot_table = pivot_table[final_column_order]
 
-    pivot_table['Total'] = pivot_table.sum(axis=1)
-    pivot_table.loc['Total'] = pivot_table.sum()
+    task_cols = [col for col in pivot_table.columns if col != 'Quant. Perfil Alocado']
+    pivot_table['Total'] = pivot_table[task_cols].sum(axis=1)
+    total_row = pivot_table.sum()
+    if 'Quant. Perfil Alocado' in total_row:
+        total_row['Quant. Perfil Alocado'] = df['original_assignee'].nunique()
+    pivot_table.loc['Total'] = total_row
 
-    # --- Lógica de Cálculo e Exibição ---
-
-    # A tabela de contagem (pivot_table) está sempre pronta.
-    # Agora, vamos preparar a tabela de percentual, se necessário.
+    # --- Preparação das Tabelas para Exibição e Exportação ---
+    
+    # Tabela de Contagem está pronta em `pivot_table`
+    
+    # Tabela de Percentual (numérica)
     percent_df = None
     if pivot_table.loc['Total', 'Total'] > 0:
-        # Cria uma cópia para os cálculos de percentual
-        percent_df = pivot_table.drop('Total').astype(float)
+        percent_calc_df = pivot_table.drop(columns=['Quant. Perfil Alocado'], errors='ignore')
+        percent_df = percent_calc_df.drop('Total').astype(float)
         row_totals = percent_df['Total']
-        row_totals[row_totals == 0] = 1 # Evita divisão por zero
-
+        row_totals[row_totals == 0] = 1
         percent_df = percent_df.drop(columns='Total').div(row_totals, axis=0) * 100
         percent_df['Total'] = 100.0
-
-        grand_total = pivot_table.loc['Total', 'Total']
-        total_row_percent = (pivot_table.loc['Total'] / grand_total) * 100
+        
+        grand_total = percent_calc_df.loc['Total', 'Total']
+        total_row_percent = (percent_calc_df.loc['Total'] / grand_total) * 100
         percent_df.loc['Total'] = total_row_percent
 
-    # Decide o que exibir no console
+    # --- Exibição no Console ---
     if show_as_percent and percent_df is not None:
+        # Formata a tabela de percentual para exibição, adicionando a contagem de perfis
         formatted_df = percent_df.map(lambda x: f"{x:.1f}%")
-        print("--- Relatório de Tarefas Concluídas por Responsável e Componente (Percentual) ---")
+        if 'Quant. Perfil Alocado' in pivot_table.columns:
+            formatted_df.insert(0, 'Quant. Perfil Alocado', pivot_table['Quant. Perfil Alocado'])
+        
+        print("--- Relatório de Tarefas Concluídas (Percentual) ---")
         print(formatted_df)
     else:
-        print("--- Relatório de Tarefas Concluídas por Responsável e Componente (Contagem) ---")
+        print("--- Relatório de Tarefas Concluídas (Contagem) ---")
         print(pivot_table)
         
     print("-" * 70)
 
-    # Exportação para Excel
+    if unconfigured_users:
+        print("\nAviso: Foi solicitado a exibição de roles, mas os responsáveis marcados com (*) não possuem role configurada no arquivo config.")
+
+    # --- Exportação para Excel ---
     if output_file:
         try:
             with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
                 pivot_table.to_excel(writer, sheet_name='Contagem')
                 if percent_df is not None:
-                    percent_df.to_excel(writer, sheet_name='Percentual', float_format="%.1f")
+                    # Adiciona a coluna de contagem de volta para a exportação do Excel
+                    excel_percent_df = percent_df.copy()
+                    if 'Quant. Perfil Alocado' in pivot_table.columns:
+                         excel_percent_df.insert(0, 'Quant. Perfil Alocado', pivot_table['Quant. Perfil Alocado'])
+                    excel_percent_df.to_excel(writer, sheet_name='Percentual', float_format="%.1f")
+
+                if show_roles and role_mappings:
+                    mapping_df = pd.DataFrame(list(role_mappings.items()), columns=['Responsável', 'Perfil'])
+                    mapping_df.to_excel(writer, sheet_name='Mapeamento Roles', index=False)
             print(f"\nRelatório salvo com sucesso em '{output_file}'")
         except Exception as e:
             print(f"\nErro ao salvar o arquivo Excel: {e}")
@@ -123,6 +163,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Gera um relatório de tarefas concluídas no Jira por responsável e componente."
     )
+    # ... (argumentos permanecem os mesmos)
     parser.add_argument(
         '-c', '--config', 
         type=str, 
@@ -158,6 +199,11 @@ if __name__ == "__main__":
         '--output',
         type=str,
         help='Caminho do arquivo Excel para salvar o relatório (ex: relatorio.xlsx).'
+    )
+    parser.add_argument(
+        '--show_roles',
+        action='store_true',
+        help='Agrupa o relatório por perfil (role) em vez de responsável individual.'
     )
 
     args = parser.parse_args()
@@ -212,7 +258,7 @@ if __name__ == "__main__":
 
         issues = get_issues(jira_client, start_date_str, end_date_str, project_key)
         
-        generate_report(issues, config, args.percent, args.output)
+        generate_report(issues, config, args.percent, args.output, args.show_roles)
 
     except Exception as e:
         print(f"Ocorreu um erro ao conectar ao Jira ou buscar issues: {e}")

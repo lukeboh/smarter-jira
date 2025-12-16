@@ -56,7 +56,6 @@ Para o script principal `main.py`, você precisa criar seu próprio arquivo de c
     ```bash
     cp config.json.template my-config.json
     ```
-    Como arquivos `*.json` estão no `.gitignore`, seu arquivo de configuração não será enviado para o repositório.
 
 2.  **Preencha os campos do seu `my-config.json`:**
 
@@ -64,15 +63,11 @@ Para o script principal `main.py`, você precisa criar seu próprio arquivo de c
     | :--- | :--- |
     | `jira_server` | A URL base da sua instância do Jira (ex: `https://suaempresa.jira.com/`). |
     | `jira_token` | **(SECRETO)** Seu token de API pessoal do Jira. |
-    | `epic_link_field_id` | **(CRÍTICO)** O ID do campo customizado para o "Epic Link". Veja a seção "Como Obter IDs de Campos" abaixo. |
+    | `epic_link_field_id` | **(CRÍTICO)** O ID do campo customizado para o "Epic Link". |
     | `default_project` | A chave do projeto padrão onde as issues serão criadas (ex: `PROJ`). |
-    | `default_reporter` | O `username` (não o email) do usuário que será o relator padrão. |
+    | `default_reporter` | O `username` do usuário que será o relator padrão. |
     | `default_assignee` | O `username` do usuário que será o responsável padrão. |
     | `default_component` | O nome de um componente padrão a ser associado às issues. |
-
-### 🕵️ Como Obter IDs de Campos Customizados (`epic_link_field_id`, etc.)
-
-A maneira mais fácil de descobrir o ID de um campo como "Epic Link" é exportando uma issue que já tenha este campo preenchido. No Jira, navegue até uma issue, clique em **Exportar > XML** e procure pelo nome do campo no arquivo XML. O `id` do campo estará visível (ex: `customfield_10109`).
 
 ---
 
@@ -88,11 +83,6 @@ python main.py --config my-config.json --csv my-issues.csv
 python main.py --config my-config.json --action delete --csv issues_log_xxxx.csv
 ```
 
-**3. Atualizar Issues**
-```bash
-python main.py --config my-config.json --action update --csv corrected-issues.csv
-```
-
 ---
 ---
 
@@ -102,22 +92,24 @@ O script `reports.py` analisa o histórico de tarefas no Jira e gera relatórios
 
 ### Funcionalidades do Relatório
 
--   Gera uma tabela de tarefas concluídas, agrupadas por responsável e por componente.
+-   Gera uma tabela de tarefas concluídas, agrupadas por responsável ou, opcionalmente, por **Perfil Profissional**.
+-   Ao agrupar por perfil, exibe a contagem de pessoas consolidadas em cada linha na coluna `Quant. Perfil Alocado`.
 -   Permite a filtragem por um período específico (mês/ano ou datas de início/fim).
 -   Permite a seleção e ordenação de componentes de interesse através do arquivo de configuração.
 -   Agrupa tarefas de componentes não especificados em uma categoria "Outros Componentes".
--   Garante que cada tarefa seja contada apenas uma vez, mesmo que tenha múltiplos componentes, respeitando a ordem de prioridade definida.
--   Oferece a opção de visualizar o relatório em valores absolutos (contagem) ou em percentuais.
--   **Exporta o relatório completo para um arquivo Excel (`.xlsx`)**, contendo abas separadas para contagem e percentuais.
+-   Garante que cada tarefa seja contada apenas uma vez, mesmo que tenha múltiplos componentes.
+-   Oferece a opção de visualizar o relatório em contagem ou em percentuais.
+-   Exporta o relatório para um arquivo Excel (`.xlsx`), que pode incluir:
+    -   Aba `Contagem` com os números absolutos.
+    -   Aba `Percentual` com os dados percentuais.
+    -   Aba `Mapeamento Roles` com o de-para de Responsável -> Perfil, quando a opção de agrupar por perfil é usada.
 
 ### Configuração do `reports.py`
 
-O `reports.py` utiliza o mesmo arquivo `config.json`. Para as novas funcionalidades, você pode adicionar a seguinte chave opcional:
+O `reports.py` utiliza o mesmo arquivo `config.json`. Para as funcionalidades de agrupamento por perfil, adicione chaves com o prefixo `role.`:
 
--   `components_to_track`: Uma string com nomes de componentes separados por vírgula (ex: `"Backend,Frontend,Infra"`).
-    -   A ordem dos componentes nesta lista define a **prioridade na contagem** e a **ordem das colunas** no relatório.
-    -   Tarefas com múltiplos componentes serão contadas apenas uma vez, no primeiro componente correspondente que aparecer na sua lista.
-    -   Se uma tarefa não possuir nenhum dos componentes listados, será agrupada em "Outros Componentes".
+-   `components_to_track`: Uma string com nomes de componentes separados por vírgula (ex: `"Backend,Frontend,Infra"`). Define a prioridade e ordem das colunas.
+-   `role.Nome do Responsável`: Mapeia um responsável para um perfil. Você pode ter quantas entradas `role.` precisar.
 
 #### Exemplo de `config.json` para relatórios:
 ```json
@@ -125,41 +117,34 @@ O `reports.py` utiliza o mesmo arquivo `config.json`. Para as novas funcionalida
   "jira_server": "https://seu-jira.com/",
   "jira_token": "SEU_TOKEN_AQUI",
   "default_project": "PROJETO",
-  "components_to_track": "Backend,Frontend,Infra"
+  "components_to_track": "Backend,Frontend,Infra",
+  "role.Fulano de Tal": "Engenharia de Software - Pleno",
+  "role.Ciclana da Silva": "Engenharia de Software - Sênior"
 }
 ```
 
 ### ▶️ Como Usar o `reports.py`
 
-**Exemplo 1: Gerar relatório de contagem para um mês específico**
+**Exemplo 1: Relatório padrão por responsável**
 ```bash
 python reports.py --config config.json --month 11 --year 2025
 ```
 
-**Exemplo 2: Gerar relatório com datas específicas**
+**Exemplo 2: Relatório por perfil, com percentuais, exportado para Excel**
 ```bash
-python reports.py --config config.json --start-date 2025-11-01 --end-date 2025-11-30
+python reports.py --config config.json --year 2025 --show_roles --percent --output relatorio_perfis.xlsx
 ```
-
-**Exemplo 3: Gerar relatório em formato percentual**
-```bash
-python reports.py --config config.json --month 11 --year 2025 --percent
-```
-
-**Exemplo 4: Exportar relatório para um arquivo Excel**
-```bash
-# Exporta a contagem e o percentual para um arquivo com duas abas
-python reports.py --config config.json --year 2025 --percent --output relatorio_anual.xlsx
-```
+*Este comando irá gerar um arquivo Excel com 3 abas: `Contagem`, `Percentual` e `Mapeamento Roles`.*
 
 ### Argumentos da Linha de Comando (`reports.py`)
 
 | Argumento | Obrigatório? | Descrição |
 | :--- | :--- | :--- |
 | `--config` / `-c` | Sim | Caminho para o seu arquivo de configuração JSON. |
-| `--start-date` | Não | Data de início do período (YYYY-MM-DD). Usar com `--end-date`. |
-| `--end-date` | Não | Data de fim do período (YYYY-MM-DD). Usar com `--start-date`. |
-| `--month` | Não | Mês numérico (1-12) para o relatório. Requer `--year`. |
-| `--year` | Não | Ano para o relatório. Pode ser usado com `--month` ou sozinho. |
-| `--percent` | Não | Exibe os resultados em formato percentual em vez de contagem. |
-| `--output` | Não | Caminho do arquivo Excel para salvar o relatório. Se usado com `--percent`, o arquivo terá duas abas (Contagem e Percentual). |
+| `--start-date` | Não | Data de início do período (YYYY-MM-DD). |
+| `--end-date` | Não | Data de fim do período (YYYY-MM-DD). |
+| `--month` | Não | Mês numérico (1-12) para o relatório. |
+| `--year` | Não | Ano para o relatório. |
+| `--percent` | Não | Exibe os resultados em formato percentual. |
+| `--output` | Não | Caminho do arquivo Excel para salvar o relatório. |
+| `--show_roles` | Não | Agrupa o relatório por perfil, exibindo a contagem de pessoas por perfil. |
