@@ -43,6 +43,7 @@ Siga os passos abaixo para configurar e executar o projeto.
     ```bash
     pip install -r requirements.txt
     ```
+    *Nota: Para usar a funcionalidade de exportar relatórios para Excel, o `requirements.txt` inclui a biblioteca `openpyxl`.*
 
 ---
 
@@ -107,6 +108,7 @@ O script `reports.py` analisa o histórico de tarefas no Jira e gera relatórios
 -   Agrupa tarefas de componentes não especificados em uma categoria "Outros Componentes".
 -   Garante que cada tarefa seja contada apenas uma vez, mesmo que tenha múltiplos componentes, respeitando a ordem de prioridade definida.
 -   Oferece a opção de visualizar o relatório em valores absolutos (contagem) ou em percentuais.
+-   **Exporta o relatório completo para um arquivo Excel (`.xlsx`)**, contendo abas separadas para contagem e percentuais.
 
 ### Configuração do `reports.py`
 
@@ -144,6 +146,12 @@ python reports.py --config config.json --start-date 2025-11-01 --end-date 2025-1
 python reports.py --config config.json --month 11 --year 2025 --percent
 ```
 
+**Exemplo 4: Exportar relatório para um arquivo Excel**
+```bash
+# Exporta a contagem e o percentual para um arquivo com duas abas
+python reports.py --config config.json --year 2025 --percent --output relatorio_anual.xlsx
+```
+
 ### Argumentos da Linha de Comando (`reports.py`)
 
 | Argumento | Obrigatório? | Descrição |
@@ -154,3 +162,4 @@ python reports.py --config config.json --month 11 --year 2025 --percent
 | `--month` | Não | Mês numérico (1-12) para o relatório. Requer `--year`. |
 | `--year` | Não | Ano para o relatório. Pode ser usado com `--month` ou sozinho. |
 | `--percent` | Não | Exibe os resultados em formato percentual em vez de contagem. |
+| `--output` | Não | Caminho do arquivo Excel para salvar o relatório. Se usado com `--percent`, o arquivo terá duas abas (Contagem e Percentual). |

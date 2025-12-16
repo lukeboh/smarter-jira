@@ -29,7 +29,7 @@ def get_issues(client, start_date, end_date, project_key):
     issues = client.search_issues(jql_query, maxResults=False, fields="assignee,components,summary")
     return issues
 
-def generate_report(issues, config, show_as_percent=False):
+def generate_report(issues, config, show_as_percent=False, output_file=None):
     """Gera um relatório em formato de tabela a partir das issues."""
     
     components_str = config.get('components_to_track', '')
@@ -78,36 +78,45 @@ def generate_report(issues, config, show_as_percent=False):
     pivot_table['Total'] = pivot_table.sum(axis=1)
     pivot_table.loc['Total'] = pivot_table.sum()
 
-    if not show_as_percent:
-        print("--- Relatório de Tarefas Concluídas por Responsável e Componente (Contagem) ---")
-        print(pivot_table)
-    else:
-        # Calcula percentuais
-        percent_df = pivot_table.drop('Total').astype(float) # Dropa a linha Total para não dividir por zero
+    # --- Lógica de Cálculo e Exibição ---
+
+    # A tabela de contagem (pivot_table) está sempre pronta.
+    # Agora, vamos preparar a tabela de percentual, se necessário.
+    percent_df = None
+    if pivot_table.loc['Total', 'Total'] > 0:
+        # Cria uma cópia para os cálculos de percentual
+        percent_df = pivot_table.drop('Total').astype(float)
         row_totals = percent_df['Total']
-        
-        # Evita divisão por zero se uma linha inteira for 0
-        row_totals[row_totals == 0] = 1 
+        row_totals[row_totals == 0] = 1 # Evita divisão por zero
 
         percent_df = percent_df.drop(columns='Total').div(row_totals, axis=0) * 100
         percent_df['Total'] = 100.0
 
-        # Calcula a linha de total percentual
         grand_total = pivot_table.loc['Total', 'Total']
-        if grand_total > 0:
-            total_row_percent = (pivot_table.loc['Total'] / grand_total) * 100
-        else:
-            total_row_percent = pivot_table.loc['Total'] * 0
-
+        total_row_percent = (pivot_table.loc['Total'] / grand_total) * 100
         percent_df.loc['Total'] = total_row_percent
-        
-        # Formata todo o dataframe
+
+    # Decide o que exibir no console
+    if show_as_percent and percent_df is not None:
         formatted_df = percent_df.map(lambda x: f"{x:.1f}%")
-        
         print("--- Relatório de Tarefas Concluídas por Responsável e Componente (Percentual) ---")
         print(formatted_df)
+    else:
+        print("--- Relatório de Tarefas Concluídas por Responsável e Componente (Contagem) ---")
+        print(pivot_table)
         
     print("-" * 70)
+
+    # Exportação para Excel
+    if output_file:
+        try:
+            with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+                pivot_table.to_excel(writer, sheet_name='Contagem')
+                if percent_df is not None:
+                    percent_df.to_excel(writer, sheet_name='Percentual', float_format="%.1f")
+            print(f"\nRelatório salvo com sucesso em '{output_file}'")
+        except Exception as e:
+            print(f"\nErro ao salvar o arquivo Excel: {e}")
 
 
 if __name__ == "__main__":
@@ -144,6 +153,11 @@ if __name__ == "__main__":
         '--percent',
         action='store_true',
         help='Exibe os resultados em formato percentual em vez de contagem.'
+    )
+    parser.add_argument(
+        '--output',
+        type=str,
+        help='Caminho do arquivo Excel para salvar o relatório (ex: relatorio.xlsx).'
     )
 
     args = parser.parse_args()
@@ -198,7 +212,7 @@ if __name__ == "__main__":
 
         issues = get_issues(jira_client, start_date_str, end_date_str, project_key)
         
-        generate_report(issues, config, args.percent)
+        generate_report(issues, config, args.percent, args.output)
 
     except Exception as e:
         print(f"Ocorreu um erro ao conectar ao Jira ou buscar issues: {e}")
