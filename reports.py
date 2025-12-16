@@ -102,7 +102,7 @@ def generate_report(issues, config, show_as_percent=False):
         percent_df.loc['Total'] = total_row_percent
         
         # Formata todo o dataframe
-        formatted_df = percent_df.applymap(lambda x: f"{x:.1f}%")
+        formatted_df = percent_df.map(lambda x: f"{x:.1f}%")
         
         print("--- Relatório de Tarefas Concluídas por Responsável e Componente (Percentual) ---")
         print(formatted_df)
