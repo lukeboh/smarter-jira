@@ -75,8 +75,13 @@ O script `report.py` analisa o histórico de tarefas no Jira e gera relatórios 
 -   Permite a busca em **todos os projetos** do Jira, não apenas no projeto padrão.
 -   Permite a seleção e ordenação de componentes de interesse.
 -   Garante que cada tarefa seja contada apenas uma vez, mesmo que tenha múltiplos componentes.
--   Oferece a opção de visualizar o relatório em contagem ou em percentuais.
--   Exporta o relatório para um arquivo Excel (`.xlsx`), com abas separadas para Contagem, Percentual e Mapeamento de Perfis.
+-   Oferece a opção de visualizar o relatório em contagem ou em percentuais no console.
+-   **Exporta para Excel:** Ao usar a opção `--output`, gera um arquivo `.xlsx` com um relatório completo em 5 abas:
+    1.  `Contagem por Responsável`: Números absolutos de tarefas por pessoa.
+    2.  `Percentual por Responsável`: Distribuição percentual de tarefas por pessoa.
+    3.  `Contagem por Perfil`: Números absolutos de tarefas, agrupados por perfil profissional.
+    4.  `Percentual por Perfil`: Distribuição percentual de tarefas por perfil.
+    5.  `Mapeamento Perfis`: Tabela de-para mostrando qual responsável pertence a qual perfil.
 
 ### Configuração do `report.py`
 
@@ -93,10 +98,10 @@ Adicione as seguintes chaves opcionais ao seu `config.json` para usar os recurso
 | `--end-date` | Não | Data de fim do período (YYYY-MM-DD). |
 | `--month` | Não | Mês numérico (1-12) para o relatório. |
 | `--year` | Não | Ano para o relatório. |
-| `--percent` | Não | Exibe os resultados em formato percentual. |
-| `--output` | Não | Caminho do arquivo Excel para salvar o relatório. |
-| `--show_roles` | Não | Agrupa o relatório por perfil, exibindo a contagem de pessoas por perfil. |
-| `--only-roles` | Não | Considera no relatório apenas responsáveis que possuem um perfil definido no config. |
+| `--percent` | Não | Altera a **visualização no console** para formato percentual. |
+| `--output` | Não | Ativa a exportação para um arquivo Excel com o nome especificado. |
+| `--show_roles` | Não | Altera a **visualização no console** para agrupar por perfil. |
+| `--only-roles` | Não | Filtra os dados para incluir apenas responsáveis com perfil definido no config. |
 | `--ignore_default_project` | Não | Executa a consulta em todos os projetos, ignorando o `default_project` do config. |
 
 ---
