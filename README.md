@@ -49,7 +49,7 @@ Siga os passos abaixo para configurar e executar o projeto.
 
 ## ⚙️ Configuração
 
-Todos os scripts (`main.py`, `reports.py`, `rank_issues.py`) usam um arquivo de configuração central.
+Todos os scripts (`import.py`, `report.py`, `rank_issues.py`) usam um arquivo de configuração central.
 
 1.  **Crie seu arquivo de configuração:**
     Faça uma cópia do `config.json.template` e renomeie para um nome de sua preferência (ex: `my-config.json`).
@@ -63,9 +63,9 @@ Todos os scripts (`main.py`, `reports.py`, `rank_issues.py`) usam um arquivo de 
 ---
 ---
 
-## 📊 Gerador de Relatórios (`reports.py`)
+## 📊 Gerador de Relatórios (`report.py`)
 
-O script `reports.py` analisa o histórico de tarefas no Jira e gera relatórios sobre a produtividade da equipe. Para detalhes sobre seus argumentos e funcionalidades, consulte a documentação no topo do próprio arquivo.
+O script `report.py` analisa o histórico de tarefas no Jira e gera relatórios sobre a produtividade da equipe. Para detalhes sobre seus argumentos e funcionalidades, consulte a documentação no topo do próprio arquivo.
 
 ---
 ---
