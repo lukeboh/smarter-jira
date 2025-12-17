@@ -35,22 +35,29 @@ def get_issues(client, start_date, end_date, project_key, ignore_project=False):
     issues = client.search_issues(jql_query, maxResults=False, fields="assignee,components,summary")
     return issues
 
-def generate_report(issues, config, show_as_percent=False, output_file=None, show_roles=False):
+def generate_report(issues, config, show_as_percent=False, output_file=None, show_roles=False, only_roles=False):
     """Gera um relatório em formato de tabela a partir das issues."""
     
     components_str = config.get('components_to_track', '')
     tracked_components_ordered = [comp.strip() for comp in components_str.split(',') if comp.strip()]
     
-    role_mappings = {}
-    if show_roles:
-        role_mappings = {k.replace('role.', '', 1): v for k, v in config.items() if k.startswith('role.')}
-
+    role_mappings = {k.replace('role.', '', 1): v for k, v in config.items() if k.startswith('role.')}
+    
     unconfigured_users = set()
     data = []
+    
+    # Se a flag --only-roles for usada, cria um set com os responsáveis que têm role
+    if only_roles:
+        people_with_roles = set(role_mappings.keys())
+
     for issue in issues:
         assignee = "Não atribuído"
         if issue.fields.assignee:
             assignee = issue.fields.assignee.displayName
+
+        # Filtra o responsável se a flag --only-roles estiver ativa
+        if only_roles and assignee not in people_with_roles:
+            continue
 
         report_identity = assignee
         if show_roles:
@@ -80,7 +87,7 @@ def generate_report(issues, config, show_as_percent=False, output_file=None, sho
         data.append({"original_assignee": assignee, "responsavel": report_identity, "componente": assigned_category})
 
     if not data:
-        print("Nenhuma issue concluída encontrada para o período especificado.")
+        print("Nenhuma issue encontrada para os critérios especificados.")
         return
 
     df = pd.DataFrame(data)
@@ -136,7 +143,7 @@ def generate_report(issues, config, show_as_percent=False, output_file=None, sho
         
     print("-" * 70)
 
-    if unconfigured_users:
+    if unconfigured_users and not only_roles:
         print("\nAviso: Foi solicitado a exibição de roles, mas os responsáveis marcados com (*) não possuem role configurada no arquivo config.")
 
     if output_file:
@@ -207,6 +214,11 @@ if __name__ == "__main__":
         action='store_true',
         help='Executa a consulta em todos os projetos, ignorando o "default_project" do config.'
     )
+    parser.add_argument(
+        '--only-roles',
+        action='store_true',
+        help='Considera no relatório apenas responsáveis que possuem um perfil (role) definido no config.'
+    )
 
     args = parser.parse_args()
 
@@ -257,7 +269,7 @@ if __name__ == "__main__":
         
         issues = get_issues(jira_client, start_date_str, end_date_str, project_key, args.ignore_default_project)
         
-        generate_report(issues, config, args.percent, args.output, args.show_roles)
+        generate_report(issues, config, args.percent, args.output, args.show_roles, args.only_roles)
 
     except Exception as e:
         print(f"Ocorreu um erro ao conectar ao Jira ou buscar issues: {e}")

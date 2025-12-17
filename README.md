@@ -58,14 +58,46 @@ Todos os scripts (`import.py`, `report.py`, `rank_issues.py`) usam um arquivo de
     ```
 
 2.  **Preencha os campos do seu `my-config.json`:**
-    Consulte o `config.json.template` para ver todos os campos disponíveis e suas descrições, incluindo `jira_server`, `jira_token`, `default_project`, `components_to_track`, e as configurações de `role.*`.
+    Consulte o `config.json.template` para ver todos os campos disponíveis e suas descrições.
 
 ---
 ---
 
 ## 📊 Gerador de Relatórios (`report.py`)
 
-O script `report.py` analisa o histórico de tarefas no Jira e gera relatórios sobre a produtividade da equipe. Para detalhes sobre seus argumentos e funcionalidades, consulte a documentação no topo do próprio arquivo.
+O script `report.py` analisa o histórico de tarefas no Jira e gera relatórios sobre a produtividade da equipe.
+
+### Funcionalidades do Relatório
+
+-   Gera uma tabela de tarefas concluídas, agrupadas por responsável ou por **Perfil Profissional**.
+-   Ao agrupar por perfil, exibe a contagem de pessoas consolidadas em cada linha (`Quant. Perfil Alocado`).
+-   Permite filtrar o relatório para incluir **apenas** responsáveis com perfis definidos no config.
+-   Permite a busca em **todos os projetos** do Jira, não apenas no projeto padrão.
+-   Permite a seleção e ordenação de componentes de interesse.
+-   Garante que cada tarefa seja contada apenas uma vez, mesmo que tenha múltiplos componentes.
+-   Oferece a opção de visualizar o relatório em contagem ou em percentuais.
+-   Exporta o relatório para um arquivo Excel (`.xlsx`), com abas separadas para Contagem, Percentual e Mapeamento de Perfis.
+
+### Configuração do `report.py`
+
+Adicione as seguintes chaves opcionais ao seu `config.json` para usar os recursos avançados:
+-   `components_to_track`: String com nomes de componentes separados por vírgula (ex: `"Backend,Frontend"`).
+-   `role.Nome do Responsável`: Mapeia um responsável para um perfil (ex: `"role.Fulano de Tal": "Engenharia de Software"`).
+
+### Argumentos da Linha de Comando (`report.py`)
+
+| Argumento | Obrigatório? | Descrição |
+| :--- | :--- | :--- |
+| `--config` / `-c` | Sim | Caminho para o seu arquivo de configuração JSON. |
+| `--start-date` | Não | Data de início do período (YYYY-MM-DD). |
+| `--end-date` | Não | Data de fim do período (YYYY-MM-DD). |
+| `--month` | Não | Mês numérico (1-12) para o relatório. |
+| `--year` | Não | Ano para o relatório. |
+| `--percent` | Não | Exibe os resultados em formato percentual. |
+| `--output` | Não | Caminho do arquivo Excel para salvar o relatório. |
+| `--show_roles` | Não | Agrupa o relatório por perfil, exibindo a contagem de pessoas por perfil. |
+| `--only-roles` | Não | Considera no relatório apenas responsáveis que possuem um perfil definido no config. |
+| `--ignore_default_project` | Não | Executa a consulta em todos os projetos, ignorando o `default_project` do config. |
 
 ---
 ---
@@ -74,32 +106,6 @@ O script `report.py` analisa o histórico de tarefas no Jira e gera relatórios 
 
 Este script permite reordenar programaticamente as issues filhas de uma issue pai (como um Épico, Story ou Tarefa) com base em múltiplos critérios.
 
-### Funcionalidades do Reordenador
-
--   Reordena sub-tarefas de uma Tarefa/Story ou issues dentro de um Épico.
--   Suporta ordenação por múltiplos critérios em cascata (ex: por status, depois por prioridade).
--   Permite definir a direção (`asc` ou `desc`) para cada critério de ordenação.
--   Verifica se as issues já estão na ordem desejada para evitar operações desnecessárias.
--   Inclui um modo de simulação (`--dry-run`) para visualizar a nova ordem sem aplicar nenhuma mudança no Jira.
--   Oferece um modo de depuração (`--debug`) para analisar o processo de comparação passo a passo.
-
-### Como Usar o `rank_issues.py`
-
-**Exemplo 1: Ordenar por prioridade (mais alta primeiro)**
-```bash
-python rank_issues.py --config config.json --parent-key PROJ-123 --rank-by priority --order asc
-```
-
-**Exemplo 2: Ordenar por Status, depois por Chave (numérica)**
-```bash
-python rank_issues.py --config config.json --parent-key PROJ-123 --rank-by status,key --order asc,asc
-```
-
-**Exemplo 3: Simular uma ordenação por data de criação (mais recentes primeiro)**
-```bash
-python rank_issues.py --config config.json --parent-key PROJ-123 --rank-by created --order desc --dry-run
-```
-
 ### Argumentos da Linha de Comando (`rank_issues.py`)
 
 | Argumento | Obrigatório? | Descrição |
@@ -107,6 +113,6 @@ python rank_issues.py --config config.json --parent-key PROJ-123 --rank-by creat
 | `--config` / `-c` | Sim | Caminho para o seu arquivo de configuração JSON. |
 | `--parent-key` | Sim | A chave da issue pai (Épico, Tarefa, etc.). |
 | `--rank-by` | Sim | Lista de critérios de ordenação, separados por vírgula. Opções: `created`, `updated`, `resolutiondate`, `priority`, `key`, `status`, `issuetype`. |
-| `--order` | Não | Lista de direções (`asc` ou `desc`), separadas por vírgula. Se apenas uma for fornecida, será usada para todos os critérios. Padrão: `asc`. |
+| `--order` | Não | Lista de direções (`asc` ou `desc`), separadas por vírgula. Padrão: `asc`. |
 | `--dry-run` | Não | Exibe a nova ordem proposta sem aplicá-la no Jira. |
 | `--debug` | Não | Ativa a saída de depuração detalhada para a lógica de ordenação. |
