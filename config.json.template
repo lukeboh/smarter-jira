@@ -10,5 +10,22 @@
 
   "role.Fulano de Tal": "Engenharia de Software - Pleno",
   "role.Ciclana da Silva": "Engenharia de Software - Sênior",
-  "role.Beltrana Souza": "Engenharia de Teste - Pleno"
+  "role.Beltrana Souza": "Engenharia de Teste - Pleno",
+
+  "//": "--- Configurações para o script rank_issues.py ---",
+  "parent-key": "PROJ-123",
+  "rank-by": ["status", "issuetype", "priority"],
+  "order": ["asc", "asc", "desc"],
+  "status-order": [
+    "In Progress",
+    "To Do",
+    "Backlog",
+    "Done",
+    "Closed"
+  ],
+  "issuetype-order": [
+    "Story",
+    "Task",
+    "Bug"
+  ]
 }

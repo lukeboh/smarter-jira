@@ -23,7 +23,7 @@ def get_rank_field_id(client):
         print(f"Aviso: Não foi possível descobrir o ID do campo 'Rank'. O rank não será exibido. Erro: {e}")
     return None
 
-def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=False, debug=False):
+def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=False, debug=False, status_order=None, issuetype_order=None):
     """Busca, ordena e, opcionalmente, reordena as issues filhas de uma issue pai."""
     try:
         print(f"Buscando a issue pai '{parent_key}' para determinar o tipo...")
@@ -68,6 +68,9 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
         print(f"Erro: O número de critérios de ordenação ({len(rank_by_list)}) não corresponde ao número de direções ({len(order_list)}).")
         return
 
+    status_order_lower = [s.lower() for s in status_order] if status_order else None
+    issuetype_order_lower = [s.lower() for s in issuetype_order] if issuetype_order else None
+
     def get_value_for_criterion(issue, criterion):
         if criterion == 'key':
             try:
@@ -78,10 +81,22 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
         if criterion == 'priority':
             return int(issue.fields.priority.id)
         if criterion == 'status':
+            if status_order_lower:
+                status_name = issue.fields.status.name.lower()
+                try:
+                    return status_order_lower.index(status_name)
+                except ValueError:
+                    return len(status_order_lower)
             category_id_map = {2: 0, 4: 1, 3: 2}
             category_id = int(issue.fields.status.statusCategory.id)
             return category_id_map.get(category_id, 99)
         if criterion == 'issuetype':
+            if issuetype_order_lower:
+                issuetype_name = issue.fields.issuetype.name.lower()
+                try:
+                    return issuetype_order_lower.index(issuetype_name)
+                except ValueError:
+                    return len(issuetype_order_lower)
             return issue.fields.issuetype.name
         
         return getattr(issue.fields, criterion, None)
@@ -166,74 +181,403 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
 
 
 if __name__ == "__main__":
+
+
     def list_of_str(arg):
+
+
+        # Retorna None se o argumento for None, senão divide a string
+
+
+        if arg is None:
+
+
+            return None
+
+
         return [s.strip() for s in arg.split(',')]
 
-    parser = argparse.ArgumentParser(
-        description="Reordena issues filhas de um Épico, Story ou Tarefa no Jira."
-    )
-    parser.add_argument(
-        '-c', '--config', 
-        type=str, 
-        required=True, 
-        help='Caminho para o arquivo de configuração JSON.'
-    )
-    parser.add_argument(
-        '--parent-key',
-        type=str,
-        required=True,
-        help='A chave da issue pai (Épico, Story, etc.) cujas filhas serão reordenadas.'
-    )
-    parser.add_argument(
-        '--rank-by',
-        type=list_of_str,
-        required=True,
-        help="Critério de ordenação. Opções: created, updated, resolutiondate, priority, key, status, issuetype."
-    )
-    parser.add_argument(
-        '--order',
-        type=list_of_str,
-        default=['asc'],
-        help="Ordem da classificação: 'asc' ou 'desc'. Forneça uma direção para cada critério em --rank-by."
-    )
-    parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Exibe a nova ordem das issues sem aplicá-la no Jira.'
-    )
-    parser.add_argument(
-        '--debug',
-        action='store_true',
-        help='Ativa a saída de depuração detalhada para a lógica de ordenação.'
-    )
 
-    args = parser.parse_args()
-    
-    valid_criteria = {'created', 'updated', 'resolutiondate', 'priority', 'key', 'status', 'issuetype'}
-    for criterion in args.rank_by:
-        if criterion not in valid_criteria:
-            print(f"Erro: Critério de ordenação inválido '{criterion}'. Válidos são: {', '.join(sorted(list(valid_criteria)))}")
+
+
+
+    # --- Análise de Argumentos ---
+
+
+
+
+
+    # 1. Pré-análise para encontrar o caminho do arquivo de configuração
+
+
+    # Isso nos permite carregar a configuração e usá-la para os padrões do analisador principal.
+
+
+    pre_parser = argparse.ArgumentParser(add_help=False)
+
+
+    pre_parser.add_argument('-c', '--config', type=str, help='Caminho para o arquivo de configuração JSON.')
+
+
+    pre_args, _ = pre_parser.parse_known_args()
+
+
+
+
+
+    # 2. Carregar configuração do arquivo, se existir
+
+
+    config = {}
+
+
+    if pre_args.config:
+
+
+        loaded_config = load_config(pre_args.config)
+
+
+        if loaded_config is None: # Erro se o arquivo for especificado mas não encontrado
+
+
             exit(1)
 
-    config = load_config(args.config)
-    if not config:
+
+        config = loaded_config
+
+
+
+
+
+    # 3. Analisador principal com padrões do arquivo de configuração
+
+
+    # A ajuda é formatada para mostrar os padrões (que podem vir do config).
+
+
+    parser = argparse.ArgumentParser(
+
+
+        description="Reordena issues filhas de um Épico, Story ou Tarefa no Jira. "
+
+
+                    "Argumentos passados na linha de comando sobrescrevem os valores do arquivo de configuração.",
+
+
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+
+
+    )
+
+
+    
+
+
+    parser.add_argument(
+
+
+        '-c', '--config', 
+
+
+        type=str, 
+
+
+        default=pre_args.config,
+
+
+        help='Caminho para o arquivo de configuração JSON.'
+
+
+    )
+
+
+    parser.add_argument(
+
+
+        '--parent-key',
+
+
+        type=str,
+
+
+        default=config.get('parent-key'),
+
+
+        help='Chave da issue pai. Pode ser definida no arquivo de configuração.'
+
+
+    )
+
+
+    parser.add_argument(
+
+
+        '--rank-by',
+
+
+        type=list_of_str,
+
+
+        default=config.get('rank-by'),
+
+
+        help="Critérios de ordenação (separados por vírgula). Pode ser definido no arquivo de configuração."
+
+
+    )
+
+
+    parser.add_argument(
+
+
+        '--order',
+
+
+        type=list_of_str,
+
+
+        default=config.get('order', ['asc']),
+
+
+        help="Ordem para cada critério em --rank-by (asc/desc). Pode ser definido no arquivo de configuração."
+
+
+    )
+
+
+    parser.add_argument(
+
+
+        '--status-order',
+
+
+        type=list_of_str,
+
+
+        default=config.get('status-order'),
+
+
+        help="Ordem customizada para status. Pode ser definida no arquivo de configuração."
+
+
+    )
+
+
+    parser.add_argument(
+
+
+        '--issuetype-order',
+
+
+        type=list_of_str,
+
+
+        default=config.get('issuetype-order'),
+
+
+        help="Ordem customizada para tipo de issue. Pode ser definida no arquivo de configuração."
+
+
+    )
+
+
+    parser.add_argument(
+
+
+        '--dry-run',
+
+
+        action='store_true',
+
+
+        help='Exibe a nova ordem sem aplicá-la no Jira.'
+
+
+    )
+
+
+    parser.add_argument(
+
+
+        '--debug',
+
+
+        action='store_true',
+
+
+        help='Ativa a saída de depuração detalhada para a lógica de ordenação.'
+
+
+    )
+
+
+
+
+
+    args = parser.parse_args()
+
+
+
+
+
+    # --- Validação Pós-Análise ---
+
+
+
+
+
+    if not args.config:
+
+
+        print("Erro: O arquivo de configuração ('-c' ou '--config') é obrigatório.")
+
+
         exit(1)
+
+
+        
+
+
+    if not args.parent_key:
+
+
+        print("Erro: '--parent-key' é obrigatório (via linha de comando ou no config.json).")
+
+
+        exit(1)
+
+
+
+
+
+    if not args.rank_by:
+
+
+        print("Erro: '--rank-by' é obrigatório (via linha de comando ou no config.json).")
+
+
+        exit(1)
+
+
+    
+
+
+    valid_criteria = {'created', 'updated', 'resolutiondate', 'priority', 'key', 'status', 'issuetype'}
+
+
+    for criterion in args.rank_by:
+
+
+        if criterion not in valid_criteria:
+
+
+            print(f"Erro: Critério de ordenação inválido '{criterion}'. Válidos são: {', '.join(sorted(list(valid_criteria)))}")
+
+
+            exit(1)
+
+
+
+
+
+    # --- Conexão e Execução ---
+
+
+    
+
 
     token = config.get("jira_token")
+
+
     if not token or "YOUR_JIRA_API_TOKEN" in token:
-        print("Erro: Token do Jira não encontrado ou não configurado no arquivo de configuração JSON.")
+
+
+        print("Erro: Token do Jira ('jira_token') não encontrado ou não configurado no arquivo de configuração.")
+
+
         exit(1)
+
+
+        
+
+
+    server = config.get("jira_server")
+
+
+    if not server:
+
+
+        print("Erro: URL do servidor Jira ('jira_server') não encontrada no arquivo de configuração.")
+
+
+        exit(1)
+
+
+
+
 
     try:
+
+
         print("Conectando ao Jira...")
+
+
         jira_client = JIRA(
-            server=config['jira_server'],
+
+
+            server=server,
+
+
             options={'headers': {'Authorization': f'Bearer {token}'}}
+
+
         )
+
+
         print("Conectado com sucesso.")
+
+
         
-        rank_child_issues(jira_client, args.parent_key, args.rank_by, args.order, args.dry_run, args.debug)
+
+
+        rank_child_issues(
+
+
+            jira_client, 
+
+
+            args.parent_key, 
+
+
+            args.rank_by, 
+
+
+            args.order, 
+
+
+            args.dry_run, 
+
+
+            args.debug, 
+
+
+            status_order=args.status_order, 
+
+
+            issuetype_order=args.issuetype_order
+
+
+        )
+
+
+
+
 
     except Exception as e:
-        print(f"Ocorreu um erro ao conectar ao Jira: {e}")
+
+
+        print(f"Ocorreu um erro ao conectar ou executar a reordenação no Jira: {e}")
+
+
         exit(1)
+

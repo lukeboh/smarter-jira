@@ -111,13 +111,36 @@ Adicione as seguintes chaves opcionais ao seu `config.json` para usar os recurso
 
 Este script permite reordenar programaticamente as issues filhas de uma issue pai (como um Épico, Story ou Tarefa) com base em múltiplos critérios.
 
+A ordem de prioridade para os parâmetros é:
+1.  Argumentos passados diretamente na linha de comando.
+2.  Valores definidos no arquivo de configuração JSON.
+
+Isso significa que você pode definir um comportamento padrão no seu `config.json` e sobrescrevê-lo facilmente com um argumento na linha de comando quando necessário.
+
+### Configurando no `config.json`
+
+Você pode definir os parâmetros de ordenação diretamente no seu arquivo de configuração para evitar passá-los toda vez. Adicione as seguintes chaves ao seu `config.json`:
+
+```json
+{
+  "//": "--- Configurações para o script rank_issues.py ---",
+  "parent-key": "PROJ-123",
+  "rank-by": ["status", "issuetype"],
+  "order": ["asc", "asc"],
+  "status-order": ["In Progress", "To Do", "Backlog", "Done"],
+  "issuetype-order": ["Story", "Task", "Bug"]
+}
+```
+
 ### Argumentos da Linha de Comando (`rank_issues.py`)
 
 | Argumento | Obrigatório? | Descrição |
 | :--- | :--- | :--- |
 | `--config` / `-c` | Sim | Caminho para o seu arquivo de configuração JSON. |
-| `--parent-key` | Sim | A chave da issue pai (Épico, Tarefa, etc.). |
-| `--rank-by` | Sim | Lista de critérios de ordenação, separados por vírgula. Opções: `created`, `updated`, `resolutiondate`, `priority`, `key`, `status`, `issuetype`. |
-| `--order` | Não | Lista de direções (`asc` ou `desc`), separadas por vírgula. Padrão: `asc`. |
+| `--parent-key` | Sim* | A chave da issue pai. *Pode ser omitido se definido no `config.json`.* |
+| `--rank-by` | Sim* | Lista de critérios de ordenação, separados por vírgula. *Pode ser omitido se definido no `config.json`.* Opções: `created`, `updated`, `resolutiondate`, `priority`, `key`, `status`, `issuetype`. |
+| `--order` | Não | Lista de direções (`asc` ou `desc`). Padrão: `asc`. *Pode ser omitido se definido no `config.json`.* |
+| `--status-order` | Não | Ordem customizada para o status (separada por vírgulas). *Pode ser omitido se definido no `config.json`.* |
+| `--issuetype-order`| Não | Ordem customizada para o tipo de issue (separada por vírgulas). *Pode ser omitido se definido no `config.json`.* |
 | `--dry-run` | Não | Exibe a nova ordem proposta sem aplicá-la no Jira. |
 | `--debug` | Não | Ativa a saída de depuração detalhada para a lógica de ordenação. |
