@@ -16,14 +16,14 @@ def load_config(config_path):
     with open(config_path, 'r') as f:
         return json.load(f)
 
-def get_issues(client, start_date, end_date, project_key, ignore_project=False):
+def get_issues(client, start_date, end_date, project_key, ignore_project_id=False):
     """Busca issues concluídas no Jira dentro de um período."""
     
     jql_parts = []
-    if not ignore_project and project_key:
+    if not ignore_project_id and project_key:
         jql_parts.append(f"project = '{project_key}'")
-    elif not ignore_project and not project_key:
-        print("Aviso: 'default_project' não definido no config. Buscando em todos os projetos.")
+    elif not ignore_project_id and not project_key:
+        print("Aviso: 'project-id' não definido no config. Buscando em todos os projetos.")
 
     jql_parts.append("status IN (FECHADO, RESOLVIDO)")
     jql_parts.append(f"resolved >= '{start_date}'")
@@ -198,7 +198,7 @@ if __name__ == "__main__":
     parser.add_argument('--percent', action='store_true', help='Exibe os resultados em formato percentual.')
     parser.add_argument('--output', type=str, help='Caminho do arquivo Excel para salvar o relatório.')
     parser.add_argument('--show_roles', action='store_true', help='Agrupa o relatório por perfil (role).')
-    parser.add_argument('--ignore_default_project', action='store_true', help='Executa a consulta em todos os projetos.')
+    parser.add_argument('--ignore-project-id', action='store_true', help='Executa a consulta em todos os projetos, ignorando o project-id do config.')
     parser.add_argument('--only-roles', action='store_true', help='Considera apenas responsáveis com perfil definido.')
 
     args = parser.parse_args()
@@ -228,8 +228,8 @@ if __name__ == "__main__":
 
     try:
         jira_client = JIRA(server=config['jira_server'], options={'headers': {'Authorization': f'Bearer {token}'}})
-        project_key = config.get('default_project')
-        issues = get_issues(jira_client, start_date_str, end_date_str, project_key, args.ignore_default_project)
+        project_key = config.get('project-id')
+        issues = get_issues(jira_client, start_date_str, end_date_str, project_key, args.ignore_project_id)
         generate_report(issues, config, args.percent, args.output, args.show_roles, args.only_roles)
     except Exception as e:
         print(f"Ocorreu um erro: {e}")

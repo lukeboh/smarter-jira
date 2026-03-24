@@ -1,8 +1,10 @@
 import argparse
 import json
 import os
-from functools import total_ordering, cmp_to_key
+import traceback
+from functools import cmp_to_key
 from jira import JIRA
+
 
 def load_config(config_path):
     """Carrega as configurações do arquivo JSON especificado."""
@@ -11,6 +13,7 @@ def load_config(config_path):
         return None
     with open(config_path, 'r') as f:
         return json.load(f)
+
 
 def get_rank_field_id(client):
     """Descobre dinamicamente o ID do campo 'Rank'."""
@@ -23,14 +26,25 @@ def get_rank_field_id(client):
         print(f"Aviso: Não foi possível descobrir o ID do campo 'Rank'. O rank não será exibido. Erro: {e}")
     return None
 
+
 def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=False, debug=False, status_order=None, issuetype_order=None):
     """Busca, ordena e, opcionalmente, reordena as issues filhas de uma issue pai."""
+    # Validações iniciais defensivas
+    if not rank_by_list:
+        print(f"Erro: parâmetro 'rank_by_list' vazio para {parent_key}. Pulando.")
+        return
+    if isinstance(rank_by_list, str):
+        rank_by_list = [s.strip() for s in rank_by_list.split(',')]
+    if not order_list:
+        order_list = ['asc']
+
     try:
-        print(f"Buscando a issue pai '{parent_key}' para determinar o tipo...")
+        print(f"\n--- Processando issue pai: {parent_key} ---")
         parent_issue = client.issue(parent_key, fields="issuetype")
+        print(f"Buscando a issue pai '{parent_key}' para determinar o tipo...")
         print(f"Issue pai encontrada. Tipo: {parent_issue.fields.issuetype.name}")
     except Exception as e:
-        print(f"Erro: Não foi possível encontrar a issue pai '{parent_key}'.")
+        print(f"Erro: Não foi possível encontrar a issue pai '{parent_key}'. Pulando.")
         print(e)
         return
 
@@ -50,7 +64,7 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
         
         child_issues = client.search_issues(jql, maxResults=False, fields=list(fields_to_fetch))
     except Exception as e:
-        print("Erro ao executar a busca por issues filhas.")
+        print(f"Erro ao executar a busca por issues filhas para '{parent_key}'.")
         print(e)
         return
 
@@ -116,14 +130,28 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
                 if debug: print("  > Ambos nulos. Empate.")
                 continue
 
-            if val1 < val2:
-                result = -1 if order == 'asc' else 1
-                if debug: print(f"  > {val1} < {val2}. Resultado: {result}")
-                return result
-            if val1 > val2:
-                result = 1 if order == 'asc' else -1
-                if debug: print(f"  > {val1} > {val2}. Resultado: {result}")
-                return result
+            try:
+                if val1 < val2:
+                    result = -1 if order == 'asc' else 1
+                    if debug: print(f"  > {val1} < {val2}. Resultado: {result}")
+                    return result
+                if val1 > val2:
+                    result = 1 if order == 'asc' else -1
+                    if debug: print(f"  > {val1} > {val2}. Resultado: {result}")
+                    return result
+            except TypeError:
+                # Comparação entre tipos diferentes: compare string representations
+                s1 = str(val1)
+                s2 = str(val2)
+                if s1 < s2:
+                    result = -1 if order == 'asc' else 1
+                    if debug: print(f"  > {s1} < {s2}. Resultado: {result}")
+                    return result
+                if s1 > s2:
+                    result = 1 if order == 'asc' else -1
+                    if debug: print(f"  > {s1} > {s2}. Resultado: {result}")
+                    return result
+
             if debug: print("  > Iguais. Empate, próximo critério.")
         if debug: print("--- Fim da Comparação: Iguais ---")
         return 0
@@ -182,402 +210,186 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
 
 if __name__ == "__main__":
 
-
     def list_of_str(arg):
-
-
         # Retorna None se o argumento for None, senão divide a string
-
-
         if arg is None:
-
-
             return None
-
-
         return [s.strip() for s in arg.split(',')]
-
-
-
-
 
     # --- Análise de Argumentos ---
 
-
-
-
-
     # 1. Pré-análise para encontrar o caminho do arquivo de configuração
-
-
     # Isso nos permite carregar a configuração e usá-la para os padrões do analisador principal.
-
-
     pre_parser = argparse.ArgumentParser(add_help=False)
-
-
     pre_parser.add_argument('-c', '--config', type=str, help='Caminho para o arquivo de configuração JSON.')
-
-
     pre_args, _ = pre_parser.parse_known_args()
 
-
-
-
-
     # 2. Carregar configuração do arquivo, se existir
-
-
     config = {}
-
-
     if pre_args.config:
-
-
         loaded_config = load_config(pre_args.config)
-
-
-        if loaded_config is None: # Erro se o arquivo for especificado mas não encontrado
-
-
+        if loaded_config is None:  # Erro se o arquivo for especificado mas não encontrado
             exit(1)
-
-
         config = loaded_config
 
-
-
-
-
     # 3. Analisador principal com padrões do arquivo de configuração
-
-
     # A ajuda é formatada para mostrar os padrões (que podem vir do config).
-
-
     parser = argparse.ArgumentParser(
-
-
-        description="Reordena issues filhas de um Épico, Story ou Tarefa no Jira. "
-
-
-                    "Argumentos passados na linha de comando sobrescrevem os valores do arquivo de configuração.",
-
-
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
-
-
+        description=(
+            "Reordena issues filhas de um Épico/Story/Tarefa ou de todos os Épicos de um projeto no Jira. "
+            "Argumentos passados na linha de comando sobrescrevem os valores do arquivo de configuração."
+        ),
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
-
-    
-
-
     parser.add_argument(
-
-
-        '-c', '--config', 
-
-
-        type=str, 
-
-
-        default=pre_args.config,
-
-
-        help='Caminho para o arquivo de configuração JSON.'
-
-
-    )
-
-
-    parser.add_argument(
-
-
-        '--parent-key',
-
-
+        '-c', '--config',
         type=str,
-
-
-        default=config.get('parent-key'),
-
-
-        help='Chave da issue pai. Pode ser definida no arquivo de configuração.'
-
-
+        default=pre_args.config,
+        help='Caminho para o arquivo de configuração JSON.',
     )
 
+    group = parser.add_mutually_exclusive_group(required=False)
+    group.add_argument(
+        '--parent-key',
+        type=str,
+        default=None,
+        help='Chave da issue pai (Épico, Story, etc.) para ordenar suas filhas. Tem prioridade sobre project-id no config.',
+    )
+    group.add_argument(
+        '--project-id',
+        type=str,
+        default=None,
+        help='ID do Projeto para ordenar as issues de TODOS os seus Épicos. Usado somente se --parent-key não for fornecido na linha de comando.',
+    )
 
     parser.add_argument(
-
-
         '--rank-by',
-
-
         type=list_of_str,
-
-
         default=config.get('rank-by'),
-
-
-        help="Critérios de ordenação (separados por vírgula). Pode ser definido no arquivo de configuração."
-
-
+        help="Critérios de ordenação (separados por vírgula). Pode ser definido no arquivo de configuração.",
     )
-
-
     parser.add_argument(
-
-
         '--order',
-
-
         type=list_of_str,
-
-
         default=config.get('order', ['asc']),
-
-
-        help="Ordem para cada critério em --rank-by (asc/desc). Pode ser definido no arquivo de configuração."
-
-
+        help="Ordem para cada critério em --rank-by (asc/desc). Pode ser definido no arquivo de configuração.",
     )
-
-
     parser.add_argument(
-
-
         '--status-order',
-
-
         type=list_of_str,
-
-
         default=config.get('status-order'),
-
-
-        help="Ordem customizada para status. Pode ser definida no arquivo de configuração."
-
-
+        help="Ordem customizada para status. Pode ser definida no arquivo de configuração.",
     )
-
-
     parser.add_argument(
-
-
         '--issuetype-order',
-
-
         type=list_of_str,
-
-
         default=config.get('issuetype-order'),
-
-
-        help="Ordem customizada para tipo de issue. Pode ser definida no arquivo de configuração."
-
-
+        help="Ordem customizada para tipo de issue. Pode ser definida no arquivo de configuração.",
     )
-
-
     parser.add_argument(
-
-
         '--dry-run',
-
-
         action='store_true',
-
-
-        help='Exibe a nova ordem sem aplicá-la no Jira.'
-
-
+        help='Exibe a nova ordem sem aplicá-la no Jira.',
     )
-
-
     parser.add_argument(
-
-
         '--debug',
-
-
         action='store_true',
-
-
-        help='Ativa a saída de depuração detalhada para a lógica de ordenação.'
-
-
+        help='Ativa a saída de depuração detalhada para a lógica de ordenação.',
     )
-
-
-
-
 
     args = parser.parse_args()
 
+    # Respeitar prioridade: argumentos de linha de comando sobrescrevem valores do arquivo de configuração.
+    # Primeiro tenta o valor passado na linha de comando; se None, recorre ao config.
+    parent_key = args.parent_key if args.parent_key is not None else config.get('parent-key')
+    project_id = args.project_id if args.project_id is not None else config.get('project-id')
 
-
-
+    # Se o usuário passou --parent-key explicitamente, isso deve ter prioridade
+    # e impedir o processamento por projeto mesmo que `project-id` esteja no config.
+    if args.parent_key is not None:
+        project_id = None
 
     # --- Validação Pós-Análise ---
-
-
-
-
-
     if not args.config:
-
-
         print("Erro: O arquivo de configuração ('-c' ou '--config') é obrigatório.")
-
-
         exit(1)
 
-
-        
-
-
-    if not args.parent_key:
-
-
-        print("Erro: '--parent-key' é obrigatório (via linha de comando ou no config.json).")
-
-
+    if not parent_key and not project_id:
+        print("Erro: Especifique '--parent-key' para ordenar um item ou '--project-id' para ordenar todos os épicos de um projeto.")
         exit(1)
-
-
-
-
 
     if not args.rank_by:
-
-
         print("Erro: '--rank-by' é obrigatório (via linha de comando ou no config.json).")
-
-
         exit(1)
-
-
-    
-
 
     valid_criteria = {'created', 'updated', 'resolutiondate', 'priority', 'key', 'status', 'issuetype'}
-
-
     for criterion in args.rank_by:
-
-
         if criterion not in valid_criteria:
-
-
             print(f"Erro: Critério de ordenação inválido '{criterion}'. Válidos são: {', '.join(sorted(list(valid_criteria)))}")
-
-
             exit(1)
 
-
-
-
-
     # --- Conexão e Execução ---
-
-
-    
-
-
     token = config.get("jira_token")
-
-
     if not token or "YOUR_JIRA_API_TOKEN" in token:
-
-
         print("Erro: Token do Jira ('jira_token') não encontrado ou não configurado no arquivo de configuração.")
-
-
         exit(1)
-
-
-        
-
 
     server = config.get("jira_server")
-
-
     if not server:
-
-
         print("Erro: URL do servidor Jira ('jira_server') não encontrada no arquivo de configuração.")
-
-
         exit(1)
-
-
-
-
 
     try:
-
-
         print("Conectando ao Jira...")
-
-
         jira_client = JIRA(
-
-
             server=server,
-
-
-            options={'headers': {'Authorization': f'Bearer {token}'}}
-
-
+            options={'headers': {'Authorization': f'Bearer {token}'}},
         )
-
-
         print("Conectado com sucesso.")
 
+        if project_id:
+            print(f"Modo de Projeto ativado para '{project_id}'. Buscando todos os épicos...")
+            jql_epics = f'project = "{project_id}" AND issuetype = Epic ORDER BY key ASC'
+            try:
+                epics = jira_client.search_issues(jql_epics, maxResults=False, fields="key")
+            except TypeError as e:
+                print(f"Aviso: search_issues falhou com TypeError: {e}. Tentando fallback com fields=['key']...")
+                try:
+                    epics = jira_client.search_issues(jql_epics, maxResults=False, fields=['key'])
+                except Exception as e2:
+                    print(f"Aviso: fallback com lista de fields falhou: {e2}. Tentando sem parâmetro 'fields'...")
+                    try:
+                        epics = jira_client.search_issues(jql_epics, maxResults=False)
+                    except Exception as e3:
+                        print(f"Erro ao buscar épicos com vários fallbacks: {e3}")
+                        epics = None
 
-        
-
-
-        rank_child_issues(
-
-
-            jira_client, 
-
-
-            args.parent_key, 
-
-
-            args.rank_by, 
-
-
-            args.order, 
-
-
-            args.dry_run, 
-
-
-            args.debug, 
-
-
-            status_order=args.status_order, 
-
-
-            issuetype_order=args.issuetype_order
-
-
-        )
-
-
-
-
+            # Filtrar entradas inválidas (issues com raw=None)
+            if epics:
+                epics = [e for e in epics if getattr(e, 'raw', None) is not None]
+            if not epics:
+                print(f"Nenhum épico encontrado no projeto '{project_id}'.")
+            else:
+                print(f"Encontrados {len(epics)} épicos. Processando cada um...")
+                for epic in epics:
+                    rank_child_issues(
+                        jira_client, epic.key, args.rank_by, args.order,
+                        args.dry_run, args.debug, args.status_order, args.issuetype_order,
+                    )
+        else:  # Se não for project_id, então é parent_key
+            rank_child_issues(
+                jira_client,
+                parent_key,
+                args.rank_by,
+                args.order,
+                args.dry_run,
+                args.debug,
+                status_order=args.status_order,
+                issuetype_order=args.issuetype_order,
+            )
 
     except Exception as e:
-
-
         print(f"Ocorreu um erro ao conectar ou executar a reordenação no Jira: {e}")
-
-
+        print(traceback.format_exc())
         exit(1)
-

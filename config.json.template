@@ -1,7 +1,7 @@
 {
   "jira_server": "https://your-jira.com/",
   "jira_token": "YOUR_JIRA_API_TOKEN",
-  "default_project": "PROJ",
+  "project-id": "PROJ",
   "default_reporter": "user.name",
   "default_assignee": "user.name",
   "default_component": "Default Component Name",

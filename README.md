@@ -102,14 +102,18 @@ Adicione as seguintes chaves opcionais ao seu `config.json` para usar os recurso
 | `--output` | Não | Ativa a exportação para um arquivo Excel com o nome especificado. |
 | `--show_roles` | Não | Altera a **visualização no console** para agrupar por perfil. |
 | `--only-roles` | Não | Filtra os dados para incluir apenas responsáveis com perfil definido no config. |
-| `--ignore_default_project` | Não | Executa a consulta em todos os projetos, ignorando o `default_project` do config. |
+| `--ignore-project-id` | Não | Executa a consulta em todos os projetos, ignorando o `project-id` do config. |
 
 ---
 ---
 
 ## 🚦 Reordenador de Issues (`rank_issues.py`)
 
-Este script permite reordenar programaticamente as issues filhas de uma issue pai (como um Épico, Story ou Tarefa) com base em múltiplos critérios.
+Este script permite reordenar programaticamente as issues filhas de uma issue pai (como um Épico, Story ou Tarefa) ou de **todos os Épicos dentro de um projeto**, com base em múltiplos critérios.
+
+A ferramenta oferece duas formas de operação:
+1.  **Modo de Issue Pai (`--parent-key`):** Reordena as issues filhas de uma única issue pai.
+2.  **Modo de Projeto (`--project-id`):** Encontra todos os Épicos em um projeto e reordena as issues filhas de cada um deles.
 
 A ordem de prioridade para os parâmetros é:
 1.  Argumentos passados diretamente na linha de comando.
@@ -125,6 +129,7 @@ Você pode definir os parâmetros de ordenação diretamente no seu arquivo de c
 {
   "//": "--- Configurações para o script rank_issues.py ---",
   "parent-key": "PROJ-123",
+  "project-id": "PROJ",
   "rank-by": ["status", "issuetype"],
   "order": ["asc", "asc"],
   "status-order": ["In Progress", "To Do", "Backlog", "Done"],
@@ -137,10 +142,14 @@ Você pode definir os parâmetros de ordenação diretamente no seu arquivo de c
 | Argumento | Obrigatório? | Descrição |
 | :--- | :--- | :--- |
 | `--config` / `-c` | Sim | Caminho para o seu arquivo de configuração JSON. |
-| `--parent-key` | Sim* | A chave da issue pai. *Pode ser omitido se definido no `config.json`.* |
-| `--rank-by` | Sim* | Lista de critérios de ordenação, separados por vírgula. *Pode ser omitido se definido no `config.json`.* Opções: `created`, `updated`, `resolutiondate`, `priority`, `key`, `status`, `issuetype`. |
-| `--order` | Não | Lista de direções (`asc` ou `desc`). Padrão: `asc`. *Pode ser omitido se definido no `config.json`.* |
-| `--status-order` | Não | Ordem customizada para o status (separada por vírgulas). *Pode ser omitido se definido no `config.json`.* |
-| `--issuetype-order`| Não | Ordem customizada para o tipo de issue (separada por vírgulas). *Pode ser omitido se definido no `config.json`.* |
+| `--parent-key` | Não* | Chave da issue pai. Se omitido, busca no config. |
+| `--project-id` | Não* | ID do projeto para ordenar TODOS os épicos. |
+| `--rank-by` | Sim** | Lista de critérios de ordenação, separados por vírgula. Opções: `created`, `updated`, `resolutiondate`, `priority`, `key`, `status`, `issuetype`. |
+| `--order` | Não | Lista de direções (`asc` ou `desc`). Padrão: `asc`. |
+| `--status-order` | Não | Ordem customizada para o status (separada por vírgulas). |
+| `--issuetype-order`| Não | Ordem customizada para o tipo de issue (separada por vírgulas). |
 | `--dry-run` | Não | Exibe a nova ordem proposta sem aplicá-la no Jira. |
 | `--debug` | Não | Ativa a saída de depuração detalhada para a lógica de ordenação. |
+
+*\* **Nota:** Você deve fornecer `--parent-key` **ou** `--project-id`, seja na linha de comando ou no arquivo de configuração.*
+*\*\* **Nota:** O argumento `--rank-by` é obrigatório, seja via linha de comando ou no arquivo de configuração.*

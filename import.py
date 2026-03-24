@@ -31,7 +31,7 @@ def create_jira_issue(config, token, issue_data, verbose=False, parent_key=None)
 
     payload = {
         "fields": {
-            "project": {"key": config['default_project']},
+            "project": {"key": config['project-id']},
             "summary": issue_data['Summary'],
             "description": issue_data['Description'],
             "issuetype": {"name": issue_data['Issue Type']},
