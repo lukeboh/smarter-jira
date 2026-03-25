@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import traceback
+import time
 from functools import cmp_to_key
 from jira import JIRA
 
@@ -27,7 +28,7 @@ def get_rank_field_id(client):
     return None
 
 
-def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=False, debug=False, status_order=None, issuetype_order=None):
+def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=False, debug=False, status_order=None, issuetype_order=None, brief=False):
     """Busca, ordena e, opcionalmente, reordena as issues filhas de uma issue pai."""
     # Validações iniciais defensivas
     if not rank_by_list:
@@ -39,14 +40,17 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
         order_list = ['asc']
 
     try:
-        print(f"\n--- Processando issue pai: {parent_key} ---")
+        verbose = not brief
+        if verbose:
+            print(f"\n--- Processando issue pai: {parent_key} ---")
         parent_issue = client.issue(parent_key, fields="issuetype")
-        print(f"Buscando a issue pai '{parent_key}' para determinar o tipo...")
-        print(f"Issue pai encontrada. Tipo: {parent_issue.fields.issuetype.name}")
+        if verbose:
+            print(f"Buscando a issue pai '{parent_key}' para determinar o tipo...")
+            print(f"Issue pai encontrada. Tipo: {parent_issue.fields.issuetype.name}")
     except Exception as e:
         print(f"Erro: Não foi possível encontrar a issue pai '{parent_key}'. Pulando.")
         print(e)
-        return
+        return 0, 0
 
     rank_field_id = get_rank_field_id(client)
 
@@ -55,7 +59,8 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
     else:
         jql = f"parent = '{parent_key}' ORDER BY Rank ASC"
     
-    print(f"Buscando issues filhas com JQL: {jql}")
+    if verbose:
+        print(f"Buscando issues filhas com JQL: {jql}")
     try:
         fields_to_fetch = set(rank_by_list)
         fields_to_fetch.update(['priority', 'status', 'issuetype'])
@@ -66,13 +71,17 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
     except Exception as e:
         print(f"Erro ao executar a busca por issues filhas para '{parent_key}'.")
         print(e)
-        return
+        return 0, 0
 
     if not child_issues:
-        print("Nenhuma issue filha encontrada para reordenar.")
-        return
+        if brief:
+            print(f"{parent_key}: nenhuma ordenação necessária.")
+        else:
+            print("Nenhuma issue filha encontrada para reordenar.")
+        return 0, 0
 
-    print(f"Encontradas {len(child_issues)} issues filhas.")
+    if verbose:
+        print(f"Encontradas {len(child_issues)} issues filhas.")
 
     current_order_keys = [issue.key for issue in child_issues]
 
@@ -158,16 +167,23 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
 
     try:
         sorted_child_issues = sorted(child_issues, key=cmp_to_key(compare_issues))
-        print(f"\nIssues ordenadas com sucesso por: {', '.join(rank_by_list)}.")
+        if verbose:
+            print(f"\nIssues ordenadas com sucesso por: {', '.join(rank_by_list)}.")
     except Exception as e:
         print(f"Erro inesperado ao ordenar as issues em memória: {e}")
-        return
+        return len(child_issues), 0
 
     proposed_order_keys = [issue.key for issue in sorted_child_issues]
 
     if current_order_keys == proposed_order_keys:
-        print("\nAs issues já estão na ordem desejada. Nenhuma alteração é necessária.")
-        return
+        if brief:
+            print(f"{parent_key}: nenhuma ordenação necessária.")
+        else:
+            print("\nAs issues já estão na ordem desejada. Nenhuma alteração é necessária.")
+        return len(child_issues), 0
+
+    # Modo breve: suprime a listagem detalhada; a impressão sucinta
+    # ocorrerá após dry-run ou após a reordenação real.
 
     print("\n--- Ordem Proposta (Final) ---")
     for issue in sorted_child_issues:
@@ -176,8 +192,13 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
     print("----------------------------")
 
     if dry_run:
-        print("\nMODO DRY-RUN ATIVADO. Nenhuma alteração será aplicada no Jira.")
-        return
+        if verbose:
+            print("\nMODO DRY-RUN ATIVADO. Nenhuma alteração será aplicada no Jira.")
+        # contar quantos realmente mudariam de posição
+        moved = sum(1 for i, k in enumerate(proposed_order_keys) if current_order_keys[i] != k)
+        if brief:
+            print(f"{parent_key}: {len(sorted_child_issues)} filhas ordenadas.")
+        return len(sorted_child_issues), moved
 
     print("\nIniciando o processo de reordenação no Jira (isso pode levar um tempo)...")
     
@@ -196,6 +217,8 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
             }
             response = client._session.put(rank_url, json=payload)
             response.raise_for_status()
+            if debug or verbose:
+                print(f"    -> API response: {response.status_code} {response.reason}")
             
             previous_issue_key = current_issue_key
 
@@ -203,9 +226,16 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
         print("\nOcorreu um erro durante a reordenação via API do Jira.")
         print("É possível que a ordenação tenha sido parcialmente aplicada.")
         print(f"Erro: {e}")
-        return
+        # Após erro parcial, retornar o número de filhos analisados e estimativa de movidos
+        moved = sum(1 for i, k in enumerate(proposed_order_keys) if current_order_keys[i] != k)
+        return len(sorted_child_issues), moved
 
     print("\nReordenação concluída com sucesso!")
+    # número de filhos analisados e quantos foram movidos (todos exceto posições iguais)
+    moved = sum(1 for i, k in enumerate(proposed_order_keys) if current_order_keys[i] != k)
+    if brief:
+        print(f"{parent_key}: {len(sorted_child_issues)} filhas ordenadas.")
+    return len(sorted_child_issues), moved
 
 
 if __name__ == "__main__":
@@ -297,8 +327,16 @@ if __name__ == "__main__":
         action='store_true',
         help='Ativa a saída de depuração detalhada para a lógica de ordenação.',
     )
+    parser.add_argument(
+        '--brief',
+        action='store_true',
+        help='Saída sucinta: para cada épico imprime apenas uma linha resumo sobre a ordenação.',
+    )
 
     args = parser.parse_args()
+
+    # Marca o tempo de início para calcular duração total de execução
+    start_time = time.time()
 
     # Respeitar prioridade: argumentos de linha de comando sobrescrevem valores do arquivo de configuração.
     # Primeiro tenta o valor passado na linha de comando; se None, recorre ao config.
@@ -346,6 +384,15 @@ if __name__ == "__main__":
             server=server,
             options={'headers': {'Authorization': f'Bearer {token}'}},
         )
+        # Garantir que a sessão HTTP usada para requisições diretas possua o header
+        # de autorização e o content-type, já que usaremos client._session.put().
+        try:
+            jira_client._session.headers.update({
+                'Authorization': f'Bearer {token}',
+                'Content-Type': 'application/json'
+            })
+        except Exception:
+            pass
         print("Conectado com sucesso.")
 
         if project_id:
@@ -353,17 +400,29 @@ if __name__ == "__main__":
             jql_epics = f'project = "{project_id}" AND issuetype = Epic ORDER BY key ASC'
             try:
                 epics = jira_client.search_issues(jql_epics, maxResults=False, fields="key")
-            except TypeError as e:
-                print(f"Aviso: search_issues falhou com TypeError: {e}. Tentando fallback com fields=['key']...")
-                try:
-                    epics = jira_client.search_issues(jql_epics, maxResults=False, fields=['key'])
-                except Exception as e2:
-                    print(f"Aviso: fallback com lista de fields falhou: {e2}. Tentando sem parâmetro 'fields'...")
+            except Exception as e:
+                # Quando a exceção for TypeError com 'NoneType is not iterable' é provável
+                # que o problema não seja o formato de `fields`, então tente sem `fields`.
+                msg = str(e)
+                if isinstance(e, TypeError) and 'NoneType' in msg:
+                    print(f"Aviso: search_issues falhou com TypeError: {e}. Tentando sem parâmetro 'fields'...")
                     try:
                         epics = jira_client.search_issues(jql_epics, maxResults=False)
-                    except Exception as e3:
-                        print(f"Erro ao buscar épicos com vários fallbacks: {e3}")
+                    except Exception as e2:
+                        print(f"Erro ao buscar épicos sem 'fields': {e2}")
                         epics = None
+                else:
+                    # Tentar fallback com lista de fields e, por fim, sem fields
+                    print(f"Aviso: search_issues falhou: {e}. Tentando fallback com fields=['key']...")
+                    try:
+                        epics = jira_client.search_issues(jql_epics, maxResults=False, fields=['key'])
+                    except Exception as e2:
+                        print(f"Aviso: fallback com lista de fields falhou: {e2}. Tentando sem parâmetro 'fields'...")
+                        try:
+                            epics = jira_client.search_issues(jql_epics, maxResults=False)
+                        except Exception as e3:
+                            print(f"Erro ao buscar épicos com vários fallbacks: {e3}")
+                            epics = None
 
             # Filtrar entradas inválidas (issues com raw=None)
             if epics:
@@ -372,13 +431,28 @@ if __name__ == "__main__":
                 print(f"Nenhum épico encontrado no projeto '{project_id}'.")
             else:
                 print(f"Encontrados {len(epics)} épicos. Processando cada um...")
+                epics_processed = 0
+                total_children_analyzed = 0
+                total_children_reordered = 0
                 for epic in epics:
-                    rank_child_issues(
-                        jira_client, epic.key, args.rank_by, args.order,
-                        args.dry_run, args.debug, args.status_order, args.issuetype_order,
+                    epics_processed += 1
+                    children, moved = rank_child_issues(
+                        jira_client,
+                        epic.key,
+                        args.rank_by,
+                        args.order,
+                        args.dry_run,
+                        args.debug,
+                        args.status_order,
+                        args.issuetype_order,
+                        brief=args.brief,
                     )
+                    total_children_analyzed += children
+                    total_children_reordered += moved
+                # imprimir resumo parcial/por projeto
+                print(f"\nResumo: Épicos processados: {epics_processed}; Filhos analisados: {total_children_analyzed}; Filhos reordenados (ou que mudariam): {total_children_reordered}")
         else:  # Se não for project_id, então é parent_key
-            rank_child_issues(
+            children, moved = rank_child_issues(
                 jira_client,
                 parent_key,
                 args.rank_by,
@@ -387,9 +461,14 @@ if __name__ == "__main__":
                 args.debug,
                 status_order=args.status_order,
                 issuetype_order=args.issuetype_order,
+                brief=args.brief,
             )
+            print(f"\nResumo: Épicos processados: 1; Filhos analisados: {children}; Filhos reordenados (ou que mudariam): {moved}")
 
     except Exception as e:
         print(f"Ocorreu um erro ao conectar ou executar a reordenação no Jira: {e}")
         print(traceback.format_exc())
         exit(1)
+    finally:
+        elapsed = time.time() - start_time
+        print(f"\nTempo total de execução: {elapsed:.2f} segundos")
