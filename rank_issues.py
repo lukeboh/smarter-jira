@@ -267,7 +267,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description=(
             "Reordena issues filhas de um Épico/Story/Tarefa ou de todos os Épicos de um projeto no Jira. "
-            "Argumentos passados na linha de comando sobrescrevem os valores do arquivo de configuração."
+            "Argumentos passados na linha de comando sobrescrevem os valores do arquivo de configuração.\n"
+            "Use `--dry-run` para testar, `--brief` para saída sucinta e `--debug` para logs detalhados."
         ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
@@ -297,7 +298,7 @@ if __name__ == "__main__":
         '--rank-by',
         type=list_of_str,
         default=config.get('rank-by'),
-        help="Critérios de ordenação (separados por vírgula). Pode ser definido no arquivo de configuração.",
+        help="Critérios de ordenação (separados por vírgula). Pode ser definido no arquivo de configuração. Ex: --rank-by status,issuetype,resolutiondate",
     )
     parser.add_argument(
         '--order',
@@ -330,7 +331,7 @@ if __name__ == "__main__":
     parser.add_argument(
         '--brief',
         action='store_true',
-        help='Saída sucinta: para cada épico imprime apenas uma linha resumo sobre a ordenação.',
+        help='Saída sucinta: para cada épico imprime apenas uma linha resumo sobre a ordenação (útil para logs).',
     )
 
     args = parser.parse_args()
