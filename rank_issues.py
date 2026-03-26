@@ -205,18 +205,19 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
             print("\nAs issues já estão na ordem desejada. Nenhuma alteração é necessária.")
         return len(child_issues), 0
 
-    if brief:
-        # Modo sucinto: apenas contar e mostrar um resumo depois
+    if brief and dry_run:
+        # Modo sucinto em dry-run: contar e retornar sem aplicar mudanças
         moved = sum(1 for i, k in enumerate(proposed_order_keys) if current_order_keys[i] != k)
         print(f"{parent_key}: {len(sorted_child_issues)} filhas ordenadas.")
         return len(sorted_child_issues), moved
 
     # Impressão detalhada (não-brief)
-    print("\n--- Ordem Proposta (Final) ---")
-    for issue in sorted_child_issues:
-        rank_value = getattr(issue.fields, rank_field_id, 'N/A') if rank_field_id else 'N/A'
-        print(f"  - {issue.key} (Rank atual: {rank_value})")
-    print("----------------------------")
+    if not brief:
+        print("\n--- Ordem Proposta (Final) ---")
+        for issue in sorted_child_issues:
+            rank_value = getattr(issue.fields, rank_field_id, 'N/A') if rank_field_id else 'N/A'
+            print(f"  - {issue.key} (Rank atual: {rank_value})")
+        print("----------------------------")
 
     if dry_run:
         if verbose:
@@ -257,6 +258,9 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
 
     print("\nReordenação concluída com sucesso!")
     moved = sum(1 for i, k in enumerate(proposed_order_keys) if current_order_keys[i] != k)
+    if brief:
+        # Em modo breve, apenas uma linha resumo por épico
+        print(f"{parent_key}: {len(sorted_child_issues)} filhas ordenadas.")
     return len(sorted_child_issues), moved
 
 
