@@ -14,7 +14,8 @@
 
   "//": "--- Configurações para o script rank_issues.py ---",
   "parent-key": "PROJ-123",
-  "rank-by": ["status", "issuetype", "priority"],
+  "sprint": "Sprint Name",
+  "rank-by": ["epic", "status", "issuetype", "resolutiondate", "priority"],
   "order": ["asc", "asc", "desc"],
   "status-order": [
     "In Progress",
@@ -27,5 +28,10 @@
     "Story",
     "Task",
     "Bug"
+  ]
+  ,
+  "epic-order": [
+    "PROJ-1",
+    "PROJ-2"
   ]
 }

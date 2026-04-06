@@ -94,11 +94,13 @@ O script reordena programaticamente as issues filhas de uma issue pai (Épico/St
 | `--config` / `-c` | Sim | Caminho para o seu arquivo de configuração JSON. |
 | `--parent-key` | Não* | Chave da issue pai. Se omitido, busca no config. |
 | `--project-id` | Não* | ID do projeto para ordenar TODOS os épicos. |
-| `--rank-by` | Sim** | Lista de critérios de ordenação, separados por vírgula. Opções: `created`, `updated`, `resolutiondate`, `priority`, `key`, `status`, `issuetype`. |
+| `--rank-by` | Sim** | Lista de critérios de ordenação, separados por vírgula. Opções: `created`, `updated`, `resolutiondate`, `priority`, `key`, `status`, `issuetype`, `epic`. |
 | `--order` | Não | Lista de direções (`asc` ou `desc`). Padrão: `asc`. |
 | `--status-order` | Não | Ordem customizada para o status (separada por vírgulas). |
 | `--issuetype-order`| Não | Ordem customizada para o tipo de issue (separada por vírgulas). |
 | `--dry-run` | Não | Exibe a nova ordem proposta sem aplicá-la no Jira. |
+| `--sprint` | Não | Nome da sprint para ordenar todas as issues dessa sprint. Se omitido, pode ser lido do `sprint` no arquivo de config. |
+| `--epic-order` | Não | Lista de chaves de épicos (separadas por vírgula) definindo ordem customizada por épicos. Ex: `ABC-1,ABC-2`. |
 | `--brief` | Não | Saída sucinta: imprime uma linha por épico e o resumo final. |
 | `--debug` | Não | Ativa a saída de depuração detalhada para a lógica de ordenação. |
 
@@ -111,6 +113,12 @@ O script reordena programaticamente as issues filhas de uma issue pai (Épico/St
 
 ```bash
 python3 rank_issues.py --config ./jira.tse.config.json --parent-key TS1184S-26 --dry-run --brief
+```
+
+- Teste (sem aplicar mudanças) para uma sprint definida no config:
+
+```bash
+python3 rank_issues.py --config ./jira.tse.config.json --dry-run --brief
 ```
 
 - Rodar para todo o projeto com logs detalhados (útil para depuração):
@@ -129,6 +137,7 @@ python3 rank_issues.py --config ./jira.tse.config.json --project-id TS1184S
 
 - Em modo normal: lista detalhada da ordem proposta por épico, e um resumo final com contagens.
 - Em `--brief`: uma linha por épico (`<EPIC_KEY>: N filhas ordenadas.` ou `<EPIC_KEY>: nenhuma ordenação necessária.`), seguida do resumo do lote e do tempo total de execução.
+ - Novo critério `epic`: use `--rank-by epic` para ordenar por épico (aceita `--epic-order` para prioridade customizada entre épicos).
 - Em `--debug`: logs de comparação entre issues e respostas HTTP das chamadas de reordenação.
 
 **Recomendação:** sempre execute com `--dry-run` e/ou `--brief` antes de aplicar em produção.
