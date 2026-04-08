@@ -5,3 +5,4 @@ export * from "./logging";
 export * from "./jiraClient";
 export * from "./batch";
 export * from "./ranking";
+export * from "./rankComparators";

@@ -91,4 +91,52 @@ export class JiraClient {
 
     return response.data.issues;
   }
+
+  async getFields(): Promise<Array<{ id: string; name: string }>> {
+    const response = await jiraRequest<Array<{ id: string; name: string }>>(this.config, {
+      path: "rest/api/2/field",
+      method: "GET"
+    });
+
+    if (!response.ok || !response.data) {
+      throw new Error(
+        `Falha ao buscar campos: status=${response.status}, erro=${JSON.stringify(response.error)}`
+      );
+    }
+
+    return response.data;
+  }
+
+  async rankIssueAfter(issueKey: string, rankAfterIssue: string): Promise<void> {
+    const response = await jiraRequest(this.config, {
+      path: "rest/agile/1.0/issue/rank",
+      method: "PUT",
+      body: JSON.stringify({
+        issues: [issueKey],
+        rankAfterIssue
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Falha ao reordenar issue ${issueKey} após ${rankAfterIssue}: status=${response.status}, erro=${JSON.stringify(response.error)}`
+      );
+    }
+  }
+
+  async getIssue<TFields = unknown>(issueKey: string, fields?: string[]): Promise<JiraIssue & { fields: TFields }> {
+    const response = await jiraRequest<JiraIssue & { fields: TFields }>(this.config, {
+      path: `rest/api/2/issue/${issueKey}`,
+      method: "GET",
+      searchParams: fields ? { fields: fields.join(",") } : undefined
+    });
+
+    if (!response.ok || !response.data) {
+      throw new Error(
+        `Falha ao buscar issue ${issueKey}: status=${response.status}, erro=${JSON.stringify(response.error)}`
+      );
+    }
+
+    return response.data;
+  }
 }
