@@ -147,6 +147,11 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
                 return issue.fields.issuetype.name
             except Exception:
                 return None
+        if criterion == 'summary':
+            try:
+                return (issue.fields.summary or '').strip().lower()
+            except Exception:
+                return None
 
         if criterion == 'epic':
             try:
@@ -372,6 +377,11 @@ def rank_issues_collection(client, label, issues, rank_by_list, order_list, dry_
                     except ValueError:
                         return len(issuetype_order_lower)
                 return issue.fields.issuetype.name
+            except Exception:
+                return None
+        if criterion == 'summary':
+            try:
+                return (issue.fields.summary or '').strip().lower()
             except Exception:
                 return None
 
@@ -627,8 +637,9 @@ if __name__ == "__main__":
         exit(1)
 
     valid_criteria = {'created', 'updated', 'resolutiondate', 'priority', 'key', 'status', 'issuetype'}
-    # adicionar novo critério 'epic'
+    # adicionar novos critérios
     valid_criteria.add('epic')
+    valid_criteria.add('summary')
     for criterion in args.rank_by:
         if criterion not in valid_criteria:
             print(f"Erro: Critério de ordenação inválido '{criterion}'. Válidos são: {', '.join(sorted(list(valid_criteria)))}")
