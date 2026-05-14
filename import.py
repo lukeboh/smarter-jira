@@ -1,8 +1,9 @@
-
+# -*- coding: utf-8 -*-
 import requests
 import json
 import csv
 import os
+import sys
 import argparse
 from datetime import datetime
 
@@ -15,8 +16,23 @@ def load_config(config_path):
     if not os.path.exists(config_path):
         print(f"Erro: Arquivo de configuração '{config_path}' não encontrado.")
         return None
-    with open(config_path, 'r') as f:
+    with open(config_path, 'r', encoding='utf-8') as f:
         return json.load(f)
+
+
+def validate_config(config, config_path, required_keys):
+    """Valida se as chaves obrigatórias estão presentes no objeto de configuração.
+    Se alguma estiver ausente, imprime mensagem amigável e encerra o programa.
+    """
+    missing = []
+    for k in required_keys:
+        v = config.get(k)
+        if v is None or (isinstance(v, str) and v.strip() == ''):
+            missing.append(k)
+    if missing:
+        for k in missing:
+            print(f"Parâmetro [{k}] não informado na linha de comando ou no arquivo de configuração ({config_path}).")
+        sys.exit(1)
 
 # --- Funções da API do Jira ---
 
@@ -221,6 +237,9 @@ if __name__ == "__main__":
     config = load_config(args.config)
     if not config:
         exit(1)
+    # Valida presença de parmetros obrigatrios no arquivo de configurao
+    required_keys = ['jira_server', 'project-id', 'default_reporter', 'default_component', 'jira_token']
+    validate_config(config, args.config, required_keys)
 
     token = config.get("jira_token")
     if not token or "YOUR_JIRA_API_TOKEN" in token:
