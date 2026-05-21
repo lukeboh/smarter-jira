@@ -22,7 +22,7 @@ Siga os passos abaixo para configurar e executar o projeto.
 
 ### Pré-requisitos
 
-- Python 3.x
+- Python 3.10+
 - `pip` para gerenciamento de pacotes
 
 ### Instalação
@@ -43,6 +43,22 @@ Siga os passos abaixo para configurar e executar o projeto.
     ```bash
     pip install -r requirements.txt
     ```
+
+### Execução via wrappers (sem ativar venv)
+
+Os wrappers em `scripts/` criam o `.venv` automaticamente (se ausente), instalam as dependências e executam o script alvo com Python >=3.10. Não é necessário rodar `source .venv/bin/activate`.
+
+1. **Torne os wrappers executáveis (uma vez):**
+   ```bash
+   chmod +x scripts/*.sh
+   ```
+
+2. **Exemplos:**
+   ```bash
+   ./scripts/run_rank_issues.sh -c ./jira.tse.config.json --project-id TS1184S --dry-run --brief
+   ./scripts/run_import.sh --action create -c ./jira.tse.config.json --csv ./issues.csv
+   ./scripts/run_report.sh -c ./jira.tse.config.json --month 5 --year 2026 --output ./relatorio.xlsx
+   ```
 
 ---
 
@@ -112,25 +128,25 @@ O script reordena programaticamente as issues filhas de uma issue pai (Épico/St
 - Teste (sem aplicar mudanças) para um épico específico com saída sucinta:
 
 ```bash
-python3 rank_issues.py --config ./jira.tse.config.json --parent-key TS1184S-26 --dry-run --brief
+./scripts/run_rank_issues.sh --config ./jira.tse.config.json --parent-key TS1184S-26 --dry-run --brief
 ```
 
 - Teste (sem aplicar mudanças) para uma sprint definida no config:
 
 ```bash
-python3 rank_issues.py --config ./jira.tse.config.json --dry-run --brief
+./scripts/run_rank_issues.sh --config ./jira.tse.config.json --dry-run --brief
 ```
 
 - Rodar para todo o projeto com logs detalhados (útil para depuração):
 
 ```bash
-python3 rank_issues.py --config ./jira.tse.config.json --project-id TS1184S --debug
+./scripts/run_rank_issues.sh --config ./jira.tse.config.json --project-id TS1184S --debug
 ```
 
 - Aplicar as alterações (remova `--dry-run`) — recomendação: gere um backup ou rode com `--dry-run` primeiro.
 
 ```bash
-python3 rank_issues.py --config ./jira.tse.config.json --project-id TS1184S
+./scripts/run_rank_issues.sh --config ./jira.tse.config.json --project-id TS1184S
 ```
 
 ### Saída prevista
