@@ -87,7 +87,7 @@ def parse_sprint_info(item):
     return (start_date, sprint_id)
 
 
-def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=False, debug=False, status_order=None, issuetype_order=None, brief=False, epic_field_id=None, sprint_field_id=None):
+def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=False, debug=False, status_order=None, issuetype_order=None, brief=False, epic_field_id=None, sprint_field_id=None, severity_field_id=None, severity_order=None):
     """Busca, ordena e, opcionalmente, reordena as issues filhas de uma issue pai."""
     if not rank_by_list:
         print(f"Erro: parâmetro 'rank_by_list' vazio para {parent_key}. Pulando.")
@@ -115,7 +115,7 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
     rank_field_id = get_rank_field_id(client)
 
     # se não fornecido, tentar descobrir os campos
-    if not epic_field_id or not sprint_field_id:
+    if not epic_field_id or not sprint_field_id or not severity_field_id:
         try:
             all_fields = client.fields()
             if not epic_field_id:
@@ -129,6 +129,12 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
                     if (field.get('name') == 'Sprint' or 
                         ('custom' in schema and 'sprint' in schema.get('custom', '').lower())):
                         sprint_field_id = field.get('id')
+                        break
+            if not severity_field_id:
+                for field in all_fields:
+                    if (field.get('name') == 'Gravidade' or 
+                        field.get('name') == 'Severity'):
+                        severity_field_id = field.get('id')
                         break
         except Exception as e:
             check_and_handle_401(e)
@@ -154,6 +160,10 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
         if 'sprint' in fields_to_fetch and sprint_field_id:
             fields_to_fetch.discard('sprint')
             fields_to_fetch.add(sprint_field_id)
+        # Se 'severity' for critério, troque pelo ID real do campo (quando disponível)
+        if 'severity' in fields_to_fetch and severity_field_id:
+            fields_to_fetch.discard('severity')
+            fields_to_fetch.add(severity_field_id)
 
         child_issues = client.search_issues(jql, maxResults=False, fields=list(fields_to_fetch))
     except Exception as e:
@@ -183,6 +193,7 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
 
     status_order_lower = [s.lower() for s in status_order] if status_order else None
     issuetype_order_lower = [s.lower() for s in issuetype_order] if issuetype_order else None
+    severity_order_lower = [s.lower() for s in severity_order] if severity_order else None
 
     def get_value_for_criterion(issue, criterion):
         if criterion == 'key':
@@ -267,6 +278,36 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
                         sprint_tuples.append(parse_sprint_info(item))
                     if sprint_tuples:
                         return max(sprint_tuples)
+                return None
+            except Exception:
+                return None
+
+        if criterion == 'severity':
+            try:
+                severity_val = None
+                if severity_field_id:
+                    severity_val = issue.raw.get('fields', {}).get(severity_field_id)
+                if not severity_val:
+                    if hasattr(issue.fields, 'severity'):
+                        severity_val = getattr(issue.fields, 'severity')
+                    else:
+                        for k, v in (issue.raw.get('fields') or {}).items():
+                            if k and 'severity' in k.lower():
+                                severity_val = v
+                                break
+                if severity_val:
+                    val_str = severity_val.value if hasattr(severity_val, 'value') else str(severity_val)
+                    val_str_lower = val_str.lower().strip()
+                    if severity_order_lower:
+                        try:
+                            return severity_order_lower.index(val_str_lower)
+                        except ValueError:
+                            return len(severity_order_lower)
+                    default_order = ['bloqueante', 'crítico', 'critico', 'normal']
+                    try:
+                        return default_order.index(val_str_lower)
+                    except ValueError:
+                        return len(default_order)
                 return None
             except Exception:
                 return None
@@ -403,7 +444,7 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
     return len(sorted_child_issues), moved
 
 
-def rank_issues_collection(client, label, issues, rank_by_list, order_list, dry_run=False, debug=False, status_order=None, issuetype_order=None, epic_order=None, brief=False, epic_field_id=None, sprint_field_id=None):
+def rank_issues_collection(client, label, issues, rank_by_list, order_list, dry_run=False, debug=False, status_order=None, issuetype_order=None, epic_order=None, brief=False, epic_field_id=None, sprint_field_id=None, severity_field_id=None, severity_order=None):
     """Ordena e opcionalmente aplica ordenação para uma coleção arbitrária de issues."""
     if not rank_by_list:
         print(f"Erro: parâmetro 'rank_by_list' vazio para {label}. Pulando.")
@@ -420,7 +461,7 @@ def rank_issues_collection(client, label, issues, rank_by_list, order_list, dry_
     rank_field_id = get_rank_field_id(client)
 
     # se não fornecido, tentar descobrir os campos
-    if not epic_field_id or not sprint_field_id:
+    if not epic_field_id or not sprint_field_id or not severity_field_id:
         try:
             all_fields = client.fields()
             if not epic_field_id:
@@ -435,6 +476,12 @@ def rank_issues_collection(client, label, issues, rank_by_list, order_list, dry_
                         ('custom' in schema and 'sprint' in schema.get('custom', '').lower())):
                         sprint_field_id = field.get('id')
                         break
+            if not severity_field_id:
+                for field in all_fields:
+                    if (field.get('name') == 'Gravidade' or 
+                        field.get('name') == 'Severity'):
+                        severity_field_id = field.get('id')
+                        break
         except Exception as e:
             check_and_handle_401(e)
 
@@ -448,6 +495,7 @@ def rank_issues_collection(client, label, issues, rank_by_list, order_list, dry_
 
     status_order_lower = [s.lower() for s in status_order] if status_order else None
     issuetype_order_lower = [s.lower() for s in issuetype_order] if issuetype_order else None
+    severity_order_lower = [s.lower() for s in severity_order] if severity_order else None
     epic_order_list = epic_order or []
 
     def get_value_for_criterion(issue, criterion):
@@ -534,6 +582,36 @@ def rank_issues_collection(client, label, issues, rank_by_list, order_list, dry_
                         sprint_tuples.append(parse_sprint_info(item))
                     if sprint_tuples:
                         return max(sprint_tuples)
+                return None
+            except Exception:
+                return None
+
+        if criterion == 'severity':
+            try:
+                severity_val = None
+                if severity_field_id:
+                    severity_val = issue.raw.get('fields', {}).get(severity_field_id)
+                if not severity_val:
+                    if hasattr(issue.fields, 'severity'):
+                        severity_val = getattr(issue.fields, 'severity')
+                    else:
+                        for k, v in (issue.raw.get('fields') or {}).items():
+                            if k and 'severity' in k.lower():
+                                severity_val = v
+                                break
+                if severity_val:
+                    val_str = severity_val.value if hasattr(severity_val, 'value') else str(severity_val)
+                    val_str_lower = val_str.lower().strip()
+                    if severity_order_lower:
+                        try:
+                            return severity_order_lower.index(val_str_lower)
+                        except ValueError:
+                            return len(severity_order_lower)
+                    default_order = ['bloqueante', 'crítico', 'critico', 'normal']
+                    try:
+                        return default_order.index(val_str_lower)
+                    except ValueError:
+                        return len(default_order)
                 return None
             except Exception:
                 return None
@@ -734,10 +812,11 @@ if __name__ == "__main__":
     group.add_argument('--project-id', type=str, default=None, help='ID do Projeto para ordenar as issues de TODOS os seus Épicos. Usado somente se --parent-key não for fornecido na linha de comando.')
     group.add_argument('--sprint', type=list_of_str, default=None, help='Nome(s) da(s) Sprint(s) para ordenar todas as issues. Aceita múltiplos valores separados por vírgula.')
 
-    parser.add_argument('--rank-by', type=list_of_str, default=config.get('rank-by'), help="Critérios de ordenação (separados por vírgula). Opções: created, updated, resolutiondate, priority, key, status, issuetype, epic, summary, sprint. Ex: --rank-by sprint,status")
+    parser.add_argument('--rank-by', type=list_of_str, default=config.get('rank-by'), help="Critérios de ordenação (separados por vírgula). Opções: created, updated, resolutiondate, priority, key, status, issuetype, epic, summary, sprint, severity. Ex: --rank-by sprint,status")
     parser.add_argument('--order', type=list_of_str, default=config.get('order', ['asc']), help="Ordem para cada critério em --rank-by (asc/desc).")
     parser.add_argument('--status-order', type=list_of_str, default=config.get('status-order'), help="Ordem customizada para status.")
     parser.add_argument('--issuetype-order', type=list_of_str, default=config.get('issuetype-order'), help="Ordem customizada para tipo de issue.")
+    parser.add_argument('--severity-order', type=list_of_str, default=config.get('severity-order'), help="Ordem customizada para severidade (severity).")
     parser.add_argument('--dry-run', action='store_true', help='Exibe a nova ordem sem aplicá-la no Jira.')
     parser.add_argument('--debug', action='store_true', help='Ativa a saída de depuração detalhada para a lógica de ordenação.')
     parser.add_argument('--brief', action='store_true', help='Saída sucinta: para cada épico imprime apenas uma linha resumo sobre a ordenação (útil para logs).')
@@ -784,6 +863,7 @@ if __name__ == "__main__":
     valid_criteria.add('epic')
     valid_criteria.add('summary')
     valid_criteria.add('sprint')
+    valid_criteria.add('severity')
     for criterion in args.rank_by:
         if criterion not in valid_criteria:
             print(f"Erro: Critério de ordenação inválido '{criterion}'. Válidos são: {', '.join(sorted(list(valid_criteria)))}")
@@ -814,7 +894,8 @@ if __name__ == "__main__":
         # carregar/descobrir IDs dos campos
         epic_field_id = config.get('epic_link_field_id')
         sprint_field_id = config.get('sprint_field_id')
-        if not epic_field_id or not sprint_field_id:
+        severity_field_id = config.get('severity_field_id')
+        if not epic_field_id or not sprint_field_id or not severity_field_id:
             try:
                 all_fields = jira_client.fields()
                 if not epic_field_id:
@@ -828,6 +909,12 @@ if __name__ == "__main__":
                         if (field.get('name') == 'Sprint' or 
                             ('custom' in schema and 'sprint' in schema.get('custom', '').lower())):
                             sprint_field_id = field.get('id')
+                            break
+                if not severity_field_id:
+                    for field in all_fields:
+                        if (field.get('name') == 'Gravidade' or 
+                            field.get('name') == 'Severity'):
+                            severity_field_id = field.get('id')
                             break
             except Exception as e:
                 check_and_handle_401(e)
@@ -875,6 +962,8 @@ if __name__ == "__main__":
                         brief=args.brief,
                         epic_field_id=epic_field_id,
                         sprint_field_id=sprint_field_id,
+                        severity_field_id=severity_field_id,
+                        severity_order=args.severity_order,
                     )
                     total_children_analyzed += children
                     total_children_reordered += moved
@@ -890,12 +979,7 @@ if __name__ == "__main__":
             else:
                 sprint_clause = 'sprint IN (' + ', '.join([f'"{s}"' for s in escaped_sprints]) + ')'
 
-            # tipos de issue relevantes por padrão: Story, Bug, Task
-            # Acrescentar variações conhecidas ('Bug Setot') e 'Melhoria' conforme instância local.
-            # Observação: instâncias Jira podem ter nomes diferentes; há fallback para filtrar tipos inválidos.
-            issuetypes = ['Story', 'Bug', 'Task', 'Bug Setot', 'Melhoria']
-            jql_types = ','.join([f'"{t}"' for t in issuetypes])
-            jql_sprint = f'{sprint_clause} AND issuetype IN ({jql_types}) ORDER BY Rank ASC'
+            jql_sprint = f'{sprint_clause} AND type IN standardIssueTypes() ORDER BY Rank ASC'
             try:
                 fields_to_fetch = set(args.rank_by)
                 fields_to_fetch.update(['priority', 'status', 'issuetype'])
@@ -908,30 +992,22 @@ if __name__ == "__main__":
                 if 'sprint' in fields_to_fetch and sprint_field_id:
                     fields_to_fetch.discard('sprint')
                     fields_to_fetch.add(sprint_field_id)
+                if 'severity' in fields_to_fetch and severity_field_id:
+                    fields_to_fetch.discard('severity')
+                    fields_to_fetch.add(severity_field_id)
 
                 try:
                     issues = jira_client.search_issues(jql_sprint, maxResults=False, fields=list(fields_to_fetch))
                 except Exception as e:
-                    # Se o erro for devido a issuetype inválido, tentar filtrar pelos tipos existentes
-                    msg = str(e)
-                    if 'issuetype' in msg.lower() or 'não existe' in msg.lower() or 'does not exist' in msg.lower():
-                        try:
-                            available_types = [it.name for it in jira_client.issue_types()]
-                        except Exception:
-                            available_types = []
-                        valid_issuetypes = [t for t in issuetypes if t in available_types]
-                        if valid_issuetypes:
-                            jql_types = ','.join([f'"{t}"' for t in valid_issuetypes])
-                            jql_sprint = f'{sprint_clause} AND issuetype IN ({jql_types}) ORDER BY Rank ASC'
-                        else:
-                            jql_sprint = f'{sprint_clause} ORDER BY Rank ASC'
-                        try:
-                            issues = jira_client.search_issues(jql_sprint, maxResults=False, fields=list(fields_to_fetch))
-                        except Exception as e2:
-                            print(f"Erro ao buscar issues da(s) sprint(s) '{sprint_name}' após ajuste dos tipos: {e2}")
-                            issues = None
-                    else:
-                        print(f"Erro ao buscar issues da(s) sprint(s) '{sprint_name}': {e}")
+                    # Se houver erro (por ex: standardIssueTypes() não suportado), fallback para buscar sem filtro
+                    try:
+                        jql_sprint_fallback = f'{sprint_clause} ORDER BY Rank ASC'
+                        issues = jira_client.search_issues(jql_sprint_fallback, maxResults=False, fields=list(fields_to_fetch))
+                        if issues:
+                            # Filtrar manualmente sub-tarefas
+                            issues = [issue for issue in issues if getattr(issue.fields.issuetype, 'subtask', False) is False]
+                    except Exception as e2:
+                        print(f"Erro ao buscar issues da(s) sprint(s) '{sprint_name}' no fallback: {e2}")
                         issues = None
             except Exception as e:
                 print(f"Erro ao preparar busca de issues da(s) sprint(s) '{sprint_name}': {e}")
@@ -955,8 +1031,14 @@ if __name__ == "__main__":
                     brief=args.brief,
                     epic_field_id=epic_field_id,
                     sprint_field_id=sprint_field_id,
+                    severity_field_id=severity_field_id,
+                    severity_order=args.severity_order,
                 )
-                print(f"\nResumo: Sprint processada: 1; Issues analisadas: {children}; Issues reordenadas (ou que mudariam): {moved}")
+                sprints_count = len(sprint_list)
+                if sprints_count == 1:
+                    print(f"\nResumo: Sprint processada: 1; Issues analisadas: {children}; Issues reordenadas (ou que mudariam): {moved}")
+                else:
+                    print(f"\nResumo: Sprints processadas: {sprints_count}; Issues analisadas: {children}; Issues reordenadas (ou que mudariam): {moved}")
         else:
             children, moved = rank_child_issues(
                 jira_client,
@@ -970,6 +1052,8 @@ if __name__ == "__main__":
                 brief=args.brief,
                 epic_field_id=epic_field_id,
                 sprint_field_id=sprint_field_id,
+                severity_field_id=severity_field_id,
+                severity_order=args.severity_order,
             )
             print(f"\nResumo: Épicos processados: 1; Filhos analisados: {children}; Filhos reordenados (ou que mudariam): {moved}")
 
