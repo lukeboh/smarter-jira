@@ -44,7 +44,50 @@ def get_rank_field_id(client):
     return None
 
 
-def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=False, debug=False, status_order=None, issuetype_order=None, brief=False):
+def parse_sprint_info(item):
+    start_date = None
+    sprint_id = -1
+    if isinstance(item, dict):
+        start_date = item.get('startDate')
+        sprint_id_val = item.get('id')
+        if sprint_id_val is not None:
+            try:
+                sprint_id = int(sprint_id_val)
+            except (ValueError, TypeError):
+                pass
+    elif isinstance(item, str):
+        import re
+        match_id = re.search(r'\bid=(\d+)\b', item)
+        if match_id:
+            sprint_id = int(match_id.group(1))
+        else:
+            match_num = re.search(r'\d+', item)
+            if match_num:
+                sprint_id = int(match_num.group())
+        match_start = re.search(r'\bstartDate=([^,\]]+)', item)
+        if match_start:
+            sd = match_start.group(1).strip()
+            if sd and sd.lower() != '<null>':
+                start_date = sd
+    else:
+        try:
+            start_date = getattr(item, 'startDate', None)
+        except Exception:
+            pass
+        try:
+            sprint_id_val = getattr(item, 'id', None)
+            if sprint_id_val is not None:
+                sprint_id = int(sprint_id_val)
+        except Exception:
+            pass
+
+    if start_date is None or not isinstance(start_date, str):
+        start_date = "9999-12-31"
+
+    return (start_date, sprint_id)
+
+
+def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=False, debug=False, status_order=None, issuetype_order=None, brief=False, epic_field_id=None, sprint_field_id=None):
     """Busca, ordena e, opcionalmente, reordena as issues filhas de uma issue pai."""
     if not rank_by_list:
         print(f"Erro: parâmetro 'rank_by_list' vazio para {parent_key}. Pulando.")
@@ -71,17 +114,24 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
 
     rank_field_id = get_rank_field_id(client)
 
-    # tentar descobrir o campo 'Epic Link' para suportar ordenação por épico
-    epic_field_id = None
-    try:
-        all_fields = client.fields()
-        for field in all_fields:
-            if field.get('name') == 'Epic Link':
-                epic_field_id = field.get('id')
-                break
-    except Exception as e:
-        check_and_handle_401(e)
-        epic_field_id = None
+    # se não fornecido, tentar descobrir os campos
+    if not epic_field_id or not sprint_field_id:
+        try:
+            all_fields = client.fields()
+            if not epic_field_id:
+                for field in all_fields:
+                    if field.get('name') == 'Epic Link':
+                        epic_field_id = field.get('id')
+                        break
+            if not sprint_field_id:
+                for field in all_fields:
+                    schema = field.get('schema', {})
+                    if (field.get('name') == 'Sprint' or 
+                        ('custom' in schema and 'sprint' in schema.get('custom', '').lower())):
+                        sprint_field_id = field.get('id')
+                        break
+        except Exception as e:
+            check_and_handle_401(e)
 
     if parent_issue.fields.issuetype.name in ['Epic', 'Épico']:
         jql = f"'Epic Link' = '{parent_key}' ORDER BY Rank ASC"
@@ -100,6 +150,10 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
         if 'epic' in fields_to_fetch and epic_field_id:
             fields_to_fetch.discard('epic')
             fields_to_fetch.add(epic_field_id)
+        # Se 'sprint' for critério, troque pelo ID real do campo (quando disponível)
+        if 'sprint' in fields_to_fetch and sprint_field_id:
+            fields_to_fetch.discard('sprint')
+            fields_to_fetch.add(sprint_field_id)
 
         child_issues = client.search_issues(jql, maxResults=False, fields=list(fields_to_fetch))
     except Exception as e:
@@ -189,6 +243,31 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
                 for k, v in (issue.raw.get('fields') or {}).items():
                     if k and 'epic' in k.lower():
                         return v
+            except Exception:
+                return None
+
+        if criterion == 'sprint':
+            try:
+                sprint_val = None
+                if sprint_field_id:
+                    sprint_val = issue.raw.get('fields', {}).get(sprint_field_id)
+                if not sprint_val:
+                    if hasattr(issue.fields, 'sprint'):
+                        sprint_val = getattr(issue.fields, 'sprint')
+                    else:
+                        for k, v in (issue.raw.get('fields') or {}).items():
+                            if k and 'sprint' in k.lower():
+                                sprint_val = v
+                                break
+                if sprint_val:
+                    if not isinstance(sprint_val, list):
+                        sprint_val = [sprint_val]
+                    sprint_tuples = []
+                    for item in sprint_val:
+                        sprint_tuples.append(parse_sprint_info(item))
+                    if sprint_tuples:
+                        return max(sprint_tuples)
+                return None
             except Exception:
                 return None
 
@@ -324,7 +403,7 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
     return len(sorted_child_issues), moved
 
 
-def rank_issues_collection(client, label, issues, rank_by_list, order_list, dry_run=False, debug=False, status_order=None, issuetype_order=None, epic_order=None, brief=False):
+def rank_issues_collection(client, label, issues, rank_by_list, order_list, dry_run=False, debug=False, status_order=None, issuetype_order=None, epic_order=None, brief=False, epic_field_id=None, sprint_field_id=None):
     """Ordena e opcionalmente aplica ordenação para uma coleção arbitrária de issues."""
     if not rank_by_list:
         print(f"Erro: parâmetro 'rank_by_list' vazio para {label}. Pulando.")
@@ -340,17 +419,24 @@ def rank_issues_collection(client, label, issues, rank_by_list, order_list, dry_
 
     rank_field_id = get_rank_field_id(client)
 
-    # descobrir epic field id se necessário
-    epic_field_id = None
-    try:
-        all_fields = client.fields()
-        for field in all_fields:
-            if field.get('name') == 'Epic Link':
-                epic_field_id = field.get('id')
-                break
-    except Exception as e:
-        check_and_handle_401(e)
-        epic_field_id = None
+    # se não fornecido, tentar descobrir os campos
+    if not epic_field_id or not sprint_field_id:
+        try:
+            all_fields = client.fields()
+            if not epic_field_id:
+                for field in all_fields:
+                    if field.get('name') == 'Epic Link':
+                        epic_field_id = field.get('id')
+                        break
+            if not sprint_field_id:
+                for field in all_fields:
+                    schema = field.get('schema', {})
+                    if (field.get('name') == 'Sprint' or 
+                        ('custom' in schema and 'sprint' in schema.get('custom', '').lower())):
+                        sprint_field_id = field.get('id')
+                        break
+        except Exception as e:
+            check_and_handle_401(e)
 
     current_order_keys = [issue.key for issue in issues]
 
@@ -423,6 +509,31 @@ def rank_issues_collection(client, label, issues, rank_by_list, order_list, dry_
                         except ValueError:
                             return len(epic_order_list)
                     return ev
+                return None
+            except Exception:
+                return None
+
+        if criterion == 'sprint':
+            try:
+                sprint_val = None
+                if sprint_field_id:
+                    sprint_val = issue.raw.get('fields', {}).get(sprint_field_id)
+                if not sprint_val:
+                    if hasattr(issue.fields, 'sprint'):
+                        sprint_val = getattr(issue.fields, 'sprint')
+                    else:
+                        for k, v in (issue.raw.get('fields') or {}).items():
+                            if k and 'sprint' in k.lower():
+                                sprint_val = v
+                                break
+                if sprint_val:
+                    if not isinstance(sprint_val, list):
+                        sprint_val = [sprint_val]
+                    sprint_tuples = []
+                    for item in sprint_val:
+                        sprint_tuples.append(parse_sprint_info(item))
+                    if sprint_tuples:
+                        return max(sprint_tuples)
                 return None
             except Exception:
                 return None
@@ -623,7 +734,7 @@ if __name__ == "__main__":
     group.add_argument('--project-id', type=str, default=None, help='ID do Projeto para ordenar as issues de TODOS os seus Épicos. Usado somente se --parent-key não for fornecido na linha de comando.')
     group.add_argument('--sprint', type=list_of_str, default=None, help='Nome(s) da(s) Sprint(s) para ordenar todas as issues. Aceita múltiplos valores separados por vírgula.')
 
-    parser.add_argument('--rank-by', type=list_of_str, default=config.get('rank-by'), help="Critérios de ordenação (separados por vírgula). Ex: --rank-by status,issuetype,resolutiondate")
+    parser.add_argument('--rank-by', type=list_of_str, default=config.get('rank-by'), help="Critérios de ordenação (separados por vírgula). Opções: created, updated, resolutiondate, priority, key, status, issuetype, epic, summary, sprint. Ex: --rank-by sprint,status")
     parser.add_argument('--order', type=list_of_str, default=config.get('order', ['asc']), help="Ordem para cada critério em --rank-by (asc/desc).")
     parser.add_argument('--status-order', type=list_of_str, default=config.get('status-order'), help="Ordem customizada para status.")
     parser.add_argument('--issuetype-order', type=list_of_str, default=config.get('issuetype-order'), help="Ordem customizada para tipo de issue.")
@@ -672,6 +783,7 @@ if __name__ == "__main__":
     # adicionar novos critérios
     valid_criteria.add('epic')
     valid_criteria.add('summary')
+    valid_criteria.add('sprint')
     for criterion in args.rank_by:
         if criterion not in valid_criteria:
             print(f"Erro: Critério de ordenação inválido '{criterion}'. Válidos são: {', '.join(sorted(list(valid_criteria)))}")
@@ -698,6 +810,28 @@ if __name__ == "__main__":
         except Exception:
             pass
         print("Conectado com sucesso.")
+
+        # carregar/descobrir IDs dos campos
+        epic_field_id = config.get('epic_link_field_id')
+        sprint_field_id = config.get('sprint_field_id')
+        if not epic_field_id or not sprint_field_id:
+            try:
+                all_fields = jira_client.fields()
+                if not epic_field_id:
+                    for field in all_fields:
+                        if field.get('name') == 'Epic Link':
+                            epic_field_id = field.get('id')
+                            break
+                if not sprint_field_id:
+                    for field in all_fields:
+                        schema = field.get('schema', {})
+                        if (field.get('name') == 'Sprint' or 
+                            ('custom' in schema and 'sprint' in schema.get('custom', '').lower())):
+                            sprint_field_id = field.get('id')
+                            break
+            except Exception as e:
+                check_and_handle_401(e)
+                print(f"Aviso: Não foi possível obter informações dos campos do Jira: {e}")
 
         if project_id:
             print(f"Modo de Projeto ativado para '{project_id}'. Buscando todos os épicos...")
@@ -739,6 +873,8 @@ if __name__ == "__main__":
                         args.status_order,
                         args.issuetype_order,
                         brief=args.brief,
+                        epic_field_id=epic_field_id,
+                        sprint_field_id=sprint_field_id,
                     )
                     total_children_analyzed += children
                     total_children_reordered += moved
@@ -761,17 +897,6 @@ if __name__ == "__main__":
             jql_types = ','.join([f'"{t}"' for t in issuetypes])
             jql_sprint = f'{sprint_clause} AND issuetype IN ({jql_types}) ORDER BY Rank ASC'
             try:
-                # detectar epic field id para incluir nos fields quando necessário
-                epic_field_id = None
-                try:
-                    all_fields = jira_client.fields()
-                    for field in all_fields:
-                        if field.get('name') == 'Epic Link':
-                            epic_field_id = field.get('id')
-                            break
-                except Exception:
-                    epic_field_id = None
-
                 fields_to_fetch = set(args.rank_by)
                 fields_to_fetch.update(['priority', 'status', 'issuetype'])
                 rank_field_id = get_rank_field_id(jira_client)
@@ -780,6 +905,9 @@ if __name__ == "__main__":
                 if 'epic' in fields_to_fetch and epic_field_id:
                     fields_to_fetch.discard('epic')
                     fields_to_fetch.add(epic_field_id)
+                if 'sprint' in fields_to_fetch and sprint_field_id:
+                    fields_to_fetch.discard('sprint')
+                    fields_to_fetch.add(sprint_field_id)
 
                 try:
                     issues = jira_client.search_issues(jql_sprint, maxResults=False, fields=list(fields_to_fetch))
@@ -825,6 +953,8 @@ if __name__ == "__main__":
                     args.issuetype_order,
                     epic_order=args.epic_order,
                     brief=args.brief,
+                    epic_field_id=epic_field_id,
+                    sprint_field_id=sprint_field_id,
                 )
                 print(f"\nResumo: Sprint processada: 1; Issues analisadas: {children}; Issues reordenadas (ou que mudariam): {moved}")
         else:
@@ -838,6 +968,8 @@ if __name__ == "__main__":
                 status_order=args.status_order,
                 issuetype_order=args.issuetype_order,
                 brief=args.brief,
+                epic_field_id=epic_field_id,
+                sprint_field_id=sprint_field_id,
             )
             print(f"\nResumo: Épicos processados: 1; Filhos analisados: {children}; Filhos reordenados (ou que mudariam): {moved}")
 

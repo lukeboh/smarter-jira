@@ -6,6 +6,7 @@
   "default_assignee": "user.name",
   "default_component": "Default Component Name",
   "epic_link_field_id": "customfield_10000",
+  "sprint_field_id": "customfield_10020",
   "components_to_track": "Backend,Frontend,Infra",
 
   "role.Fulano de Tal": "Engenharia de Software - Pleno",

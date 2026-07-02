@@ -112,7 +112,7 @@ O script reordena programaticamente as issues filhas de uma issue pai (Épico/St
 | `--config` / `-c` | Sim | Caminho para o seu arquivo de configuração JSON. |
 | `--parent-key` | Não* | Chave da issue pai. Se omitido, busca no config. |
 | `--project-id` | Não* | ID do projeto para ordenar TODOS os épicos. |
-| `--rank-by` | Sim** | Lista de critérios de ordenação, separados por vírgula. Opções: `created`, `updated`, `resolutiondate`, `priority`, `key`, `status`, `issuetype`, `epic`, `summary`. |
+| `--rank-by` | Sim** | Lista de critérios de ordenação, separados por vírgula. Opções: `created`, `updated`, `resolutiondate`, `priority`, `key`, `status`, `issuetype`, `epic`, `summary`, `sprint`. |
 | `--order` | Não | Lista de direções (`asc` ou `desc`). Padrão: `asc`. |
 | `--status-order` | Não | Ordem customizada para o status (separada por vírgulas). |
 | `--issuetype-order`| Não | Ordem customizada para o tipo de issue (separada por vírgulas). |
@@ -157,6 +157,7 @@ O script reordena programaticamente as issues filhas de uma issue pai (Épico/St
 - Em `--brief`: uma linha por épico (`<EPIC_KEY>: N filhas ordenadas.` ou `<EPIC_KEY>: nenhuma ordenação necessária.`), seguida do resumo do lote e do tempo total de execução.
  - Novo critério `epic`: use `--rank-by epic` para ordenar por épico (aceita `--epic-order` para prioridade customizada entre épicos).
  - Novo critério `summary`: use `--rank-by summary` para ordenar alfabeticamente pelo resumo.
+ - Novo critério `sprint`: use `--rank-by sprint` para ordenar as issues de forma cronológica pela data de início da sprint associada (utiliza o campo do Jira especificado no parâmetro `"sprint_field_id"`).
 - Em `--debug`: logs de comparação entre issues e respostas HTTP das chamadas de reordenação.
 
 **Recomendação:** sempre execute com `--dry-run` e/ou `--brief` antes de aplicar em produção.
