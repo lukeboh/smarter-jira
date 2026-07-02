@@ -6,7 +6,22 @@ from datetime import datetime, timedelta
 from calendar import monthrange
 
 import pandas as pd
-from jira import JIRA
+from jira import JIRA, JIRAError
+
+
+def check_and_handle_401(e):
+    """Verifica se a exceção é um erro 401 (Não Autorizado) do Jira e encerra com mensagem amigável."""
+    is_401 = False
+    if isinstance(e, JIRAError) and e.status_code == 401:
+        is_401 = True
+    elif "401" in str(e):
+        is_401 = True
+
+    if is_401:
+        print("\nErro: O token do Jira fornecido não é mais válido (Erro HTTP 401 - Não Autorizado).")
+        print("Por favor, verifique se o 'jira_token' no seu arquivo de configuração está correto e ativo.")
+        exit(1)
+
 
 def load_config(config_path):
     """Carrega as configurações do arquivo JSON especificado."""
@@ -232,5 +247,6 @@ if __name__ == "__main__":
         issues = get_issues(jira_client, start_date_str, end_date_str, project_key, args.ignore_project_id)
         generate_report(issues, config, args.percent, args.output, args.show_roles, args.only_roles)
     except Exception as e:
+        check_and_handle_401(e)
         print(f"Ocorreu um erro: {e}")
         exit(1)

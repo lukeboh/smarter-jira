@@ -4,7 +4,22 @@ import os
 import traceback
 import time
 from functools import cmp_to_key
-from jira import JIRA
+from jira import JIRA, JIRAError
+
+
+def check_and_handle_401(e):
+    """Verifica se a exceção é um erro 401 (Não Autorizado) do Jira e encerra com mensagem amigável."""
+    is_401 = False
+    if isinstance(e, JIRAError) and e.status_code == 401:
+        is_401 = True
+    elif "401" in str(e):
+        is_401 = True
+
+    if is_401:
+        print("\nErro: O token do Jira fornecido não é mais válido (Erro HTTP 401 - Não Autorizado).")
+        print("Por favor, verifique se o 'jira_token' no seu arquivo de configuração está correto e ativo.")
+        exit(1)
+
 
 
 def load_config(config_path):
@@ -24,6 +39,7 @@ def get_rank_field_id(client):
             if field.get('name') == 'Rank':
                 return field.get('id')
     except Exception as e:
+        check_and_handle_401(e)
         print(f"Aviso: Não foi possível descobrir o ID do campo 'Rank'. Erro: {e}")
     return None
 
@@ -47,6 +63,7 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
             print(f"Buscando a issue pai '{parent_key}' para determinar o tipo...")
             print(f"Issue pai encontrada. Tipo: {parent_issue.fields.issuetype.name}")
     except Exception as e:
+        check_and_handle_401(e)
         print(f"Erro: Não foi possível encontrar a issue pai '{parent_key}'. Pulando.")
         if debug:
             print(traceback.format_exc())
@@ -62,7 +79,8 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
             if field.get('name') == 'Epic Link':
                 epic_field_id = field.get('id')
                 break
-    except Exception:
+    except Exception as e:
+        check_and_handle_401(e)
         epic_field_id = None
 
     if parent_issue.fields.issuetype.name in ['Epic', 'Épico']:
@@ -85,6 +103,7 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
 
         child_issues = client.search_issues(jql, maxResults=False, fields=list(fields_to_fetch))
     except Exception as e:
+        check_and_handle_401(e)
         print(f"Erro ao executar a busca por issues filhas para '{parent_key}': {e}")
         if debug:
             print(traceback.format_exc())
@@ -288,6 +307,7 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
             previous_issue_key = current_issue_key
 
     except Exception as e:
+        check_and_handle_401(e)
         print("\nOcorreu um erro durante a reordenação via API do Jira.")
         print("É possível que a ordenação tenha sido parcialmente aplicada.")
         print(f"Erro: {e}")
@@ -328,7 +348,8 @@ def rank_issues_collection(client, label, issues, rank_by_list, order_list, dry_
             if field.get('name') == 'Epic Link':
                 epic_field_id = field.get('id')
                 break
-    except Exception:
+    except Exception as e:
+        check_and_handle_401(e)
         epic_field_id = None
 
     current_order_keys = [issue.key for issue in issues]
@@ -552,6 +573,7 @@ def rank_issues_collection(client, label, issues, rank_by_list, order_list, dry_
             previous_issue_key = current_issue_key
 
     except Exception as e:
+        check_and_handle_401(e)
         print("\nOcorreu um erro durante a reordenação via API do Jira.")
         print("É possível que a ordenação tenha sido parcialmente aplicada.")
         print(f"Erro: {e}")
@@ -820,6 +842,7 @@ if __name__ == "__main__":
             print(f"\nResumo: Épicos processados: 1; Filhos analisados: {children}; Filhos reordenados (ou que mudariam): {moved}")
 
     except Exception as e:
+        check_and_handle_401(e)
         print(f"Ocorreu um erro ao conectar ou executar a reordenação no Jira: {e}")
         print(traceback.format_exc())
         exit(1)
