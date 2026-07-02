@@ -599,7 +599,7 @@ if __name__ == "__main__":
     group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument('--parent-key', type=str, default=None, help='Chave da issue pai (Épico, Story, etc.) para ordenar suas filhas. Tem prioridade sobre project-id no config.')
     group.add_argument('--project-id', type=str, default=None, help='ID do Projeto para ordenar as issues de TODOS os seus Épicos. Usado somente se --parent-key não for fornecido na linha de comando.')
-    group.add_argument('--sprint', type=str, default=None, help='Nome da Sprint para ordenar todas as issues dessa sprint.')
+    group.add_argument('--sprint', type=list_of_str, default=None, help='Nome(s) da(s) Sprint(s) para ordenar todas as issues. Aceita múltiplos valores separados por vírgula.')
 
     parser.add_argument('--rank-by', type=list_of_str, default=config.get('rank-by'), help="Critérios de ordenação (separados por vírgula). Ex: --rank-by status,issuetype,resolutiondate")
     parser.add_argument('--order', type=list_of_str, default=config.get('order', ['asc']), help="Ordem para cada critério em --rank-by (asc/desc).")
@@ -624,11 +624,21 @@ if __name__ == "__main__":
         parent_key = None
         project_id = None
 
+    # Normaliza sprint para uma lista de strings
+    sprint_list = []
+    if sprint:
+        if isinstance(sprint, list):
+            sprint_list = [str(s).strip() for s in sprint if str(s).strip()]
+        elif isinstance(sprint, str):
+            sprint_list = [s.strip() for s in sprint.split(',') if s.strip()]
+        else:
+            sprint_list = [str(sprint).strip()]
+
     if not args.config:
         print("Erro: O arquivo de configuração ('-c' ou '--config') é obrigatório.")
         exit(1)
 
-    if not parent_key and not project_id and not sprint:
+    if not parent_key and not project_id and not sprint_list:
         print("Erro: Especifique '--parent-key' para ordenar um item, '--project-id' para ordenar todos os épicos de um projeto, ou '--sprint' para ordenar uma sprint.")
         exit(1)
 
@@ -711,15 +721,23 @@ if __name__ == "__main__":
                     total_children_analyzed += children
                     total_children_reordered += moved
                 print(f"\nResumo: Épicos processados: {epics_processed}; Filhos analisados: {total_children_analyzed}; Filhos reordenados (ou que mudariam): {total_children_reordered}")
-        elif sprint:
-            sprint_name = sprint
-            print(f"Modo de Sprint ativado para '{sprint_name}'. Buscando issues na sprint...")
+        elif sprint_list:
+            sprint_name = ", ".join(sprint_list)
+            print(f"Modo de Sprint ativado para '{sprint_name}'. Buscando issues na(s) sprint(s)...")
+            
+            # Constrói a cláusula JQL escapando aspas duplas dos nomes de sprints
+            escaped_sprints = [s.replace('"', '\\"') for s in sprint_list]
+            if len(escaped_sprints) == 1:
+                sprint_clause = f'sprint = "{escaped_sprints[0]}"'
+            else:
+                sprint_clause = 'sprint IN (' + ', '.join([f'"{s}"' for s in escaped_sprints]) + ')'
+
             # tipos de issue relevantes por padrão: Story, Bug, Task
             # Acrescentar variações conhecidas ('Bug Setot') e 'Melhoria' conforme instância local.
             # Observação: instâncias Jira podem ter nomes diferentes; há fallback para filtrar tipos inválidos.
             issuetypes = ['Story', 'Bug', 'Task', 'Bug Setot', 'Melhoria']
             jql_types = ','.join([f'"{t}"' for t in issuetypes])
-            jql_sprint = f'sprint = "{sprint_name}" AND issuetype IN ({jql_types}) ORDER BY Rank ASC'
+            jql_sprint = f'{sprint_clause} AND issuetype IN ({jql_types}) ORDER BY Rank ASC'
             try:
                 # detectar epic field id para incluir nos fields quando necessário
                 epic_field_id = None
@@ -754,19 +772,19 @@ if __name__ == "__main__":
                         valid_issuetypes = [t for t in issuetypes if t in available_types]
                         if valid_issuetypes:
                             jql_types = ','.join([f'"{t}"' for t in valid_issuetypes])
-                            jql_sprint = f'sprint = "{sprint_name}" AND issuetype IN ({jql_types}) ORDER BY Rank ASC'
+                            jql_sprint = f'{sprint_clause} AND issuetype IN ({jql_types}) ORDER BY Rank ASC'
                         else:
-                            jql_sprint = f'sprint = "{sprint_name}" ORDER BY Rank ASC'
+                            jql_sprint = f'{sprint_clause} ORDER BY Rank ASC'
                         try:
                             issues = jira_client.search_issues(jql_sprint, maxResults=False, fields=list(fields_to_fetch))
                         except Exception as e2:
-                            print(f"Erro ao buscar issues da sprint '{sprint_name}' após ajuste dos tipos: {e2}")
+                            print(f"Erro ao buscar issues da(s) sprint(s) '{sprint_name}' após ajuste dos tipos: {e2}")
                             issues = None
                     else:
-                        print(f"Erro ao buscar issues da sprint '{sprint_name}': {e}")
+                        print(f"Erro ao buscar issues da(s) sprint(s) '{sprint_name}': {e}")
                         issues = None
             except Exception as e:
-                print(f"Erro ao preparar busca de issues da sprint '{sprint_name}': {e}")
+                print(f"Erro ao preparar busca de issues da(s) sprint(s) '{sprint_name}': {e}")
                 issues = None
 
             if not issues:

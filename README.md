@@ -84,6 +84,7 @@ O script reordena programaticamente as issues filhas de uma issue pai (Épico/St
 
 1.  **Modo de Issue Pai (`--parent-key`):** Reordena as issues filhas de uma única issue pai.
 2.  **Modo de Projeto (`--project-id`):** Encontra todos os Épicos em um projeto e reordena as issues filhas de cada um deles.
+3.  **Modo de Sprint (`--sprint`):** Reordena todas as issues de uma ou mais sprints especificadas.
 
 ### Prioridade de configurações
 
@@ -96,6 +97,7 @@ O script reordena programaticamente as issues filhas de uma issue pai (Épico/St
 {
   "parent-key": "PROJ-123",
   "project-id": "PROJ",
+  "sprint": ["Sprint A", "Sprint B"], // Aceita lista, string única ("Sprint A") ou valores separados por vírgula ("Sprint A, Sprint B")
   "rank-by": ["status", "issuetype"],
   "order": ["asc", "asc"],
   "status-order": ["In Progress", "To Do", "Backlog", "Done"],
@@ -115,12 +117,12 @@ O script reordena programaticamente as issues filhas de uma issue pai (Épico/St
 | `--status-order` | Não | Ordem customizada para o status (separada por vírgulas). |
 | `--issuetype-order`| Não | Ordem customizada para o tipo de issue (separada por vírgulas). |
 | `--dry-run` | Não | Exibe a nova ordem proposta sem aplicá-la no Jira. |
-| `--sprint` | Não | Nome da sprint para ordenar todas as issues dessa sprint. Se omitido, pode ser lido do `sprint` no arquivo de config. |
+| `--sprint` | Não* | Nome(s) da(s) sprint(s) para ordenar todas as issues. Aceita múltiplos valores separados por vírgula. Ex: `Sprint A, Sprint B`. |
 | `--epic-order` | Não | Lista de chaves de épicos (separadas por vírgula) definindo ordem customizada por épicos. Ex: `ABC-1,ABC-2`. |
 | `--brief` | Não | Saída sucinta: imprime uma linha por épico e o resumo final. |
 | `--debug` | Não | Ativa a saída de depuração detalhada para a lógica de ordenação. |
 
-\* **Nota:** Você deve fornecer `--parent-key` **ou** `--project-id`, seja na linha de comando ou no arquivo de configuração.
+\* **Nota:** Você deve fornecer pelo menos um entre `--parent-key`, `--project-id` **ou** `--sprint`, seja na linha de comando ou no arquivo de configuração.
 \*\* **Nota:** O argumento `--rank-by` é obrigatório, seja via linha de comando ou no arquivo de configuração.
 
 ### Exemplos de uso
