@@ -14,7 +14,7 @@
 
   "//": "--- Configurações para o script rank_issues.py ---",
   "parent-key": "PROJ-123",
-  "//sprint": "Exemplos de valores para sprint: \"Sprint A\", ou \"Sprint A, Sprint B\", ou [\"Sprint A\", \"Sprint B\"]",
+  "//sprint": "Exemplos de valores para sprint: "Sprint A", ou "Sprint A, Sprint B", ou ["Sprint A", "Sprint B"]",
   "sprint": "Sprint Name",
   "rank-by": ["epic", "status", "issuetype", "summary", "resolutiondate", "priority"],
   "order": ["asc", "asc", "desc"],
