@@ -87,10 +87,22 @@ def parse_sprint_info(item):
     return (start_date, sprint_id)
 
 
-def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=False, debug=False, status_order=None, issuetype_order=None, brief=False, epic_field_id=None, sprint_field_id=None, severity_field_id=None, severity_order=None):
+def make_logger(log_buffer=None):
+    """Retorna uma função de log que acumula mensagens se log_buffer for fornecido, ou imprime no console."""
+    def log(*args, **kwargs):
+        msg = " ".join(str(arg) for arg in args)
+        if log_buffer is not None:
+            log_buffer.append(msg)
+        else:
+            print(*args, **kwargs)
+    return log
+
+
+def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=False, debug=False, status_order=None, issuetype_order=None, brief=False, epic_field_id=None, sprint_field_id=None, severity_field_id=None, severity_order=None, batch_size=50, log_buffer=None):
     """Busca, ordena e, opcionalmente, reordena as issues filhas de uma issue pai."""
+    logger = make_logger(log_buffer)
     if not rank_by_list:
-        print(f"Erro: parâmetro 'rank_by_list' vazio para {parent_key}. Pulando.")
+        logger(f"Erro: parâmetro 'rank_by_list' vazio para {parent_key}. Pulando.")
         return 0, 0
     if isinstance(rank_by_list, str):
         rank_by_list = [s.strip() for s in rank_by_list.split(',')]
@@ -100,16 +112,16 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
     try:
         verbose = not brief
         if verbose:
-            print(f"\n--- Processando issue pai: {parent_key} ---")
+            logger(f"\n--- Processando issue pai: {parent_key} ---")
         parent_issue = client.issue(parent_key, fields="issuetype")
         if verbose:
-            print(f"Buscando a issue pai '{parent_key}' para determinar o tipo...")
-            print(f"Issue pai encontrada. Tipo: {parent_issue.fields.issuetype.name}")
+            logger(f"Buscando a issue pai '{parent_key}' para determinar o tipo...")
+            logger(f"Issue pai encontrada. Tipo: {parent_issue.fields.issuetype.name}")
     except Exception as e:
         check_and_handle_401(e)
-        print(f"Erro: Não foi possível encontrar a issue pai '{parent_key}'. Pulando.")
+        logger(f"Erro: Não foi possível encontrar a issue pai '{parent_key}'. Pulando.")
         if debug:
-            print(traceback.format_exc())
+            logger(traceback.format_exc())
         return 0, 0
 
     rank_field_id = get_rank_field_id(client)
@@ -168,20 +180,20 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
         child_issues = client.search_issues(jql, maxResults=False, fields=list(fields_to_fetch))
     except Exception as e:
         check_and_handle_401(e)
-        print(f"Erro ao executar a busca por issues filhas para '{parent_key}': {e}")
+        logger(f"Erro ao executar a busca por issues filhas para '{parent_key}': {e}")
         if debug:
-            print(traceback.format_exc())
+            logger(traceback.format_exc())
         return 0, 0
 
     if not child_issues:
         if brief:
-            print(f"{parent_key}: nenhuma ordenação necessária.")
+            logger(f"{parent_key}: nenhuma ordenação necessária.")
         else:
-            print("Nenhuma issue filha encontrada para reordenar.")
+            logger("Nenhuma issue filha encontrada para reordenar.")
         return 0, 0
 
     if verbose:
-        print(f"Encontradas {len(child_issues)} issues filhas.")
+        logger(f"Encontradas {len(child_issues)} issues filhas.")
 
     current_order_keys = [issue.key for issue in child_issues]
 
@@ -316,14 +328,14 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
 
     def compare_issues(issue1, issue2):
         if debug:
-            print(f"\n--- Comparando {issue1.key} e {issue2.key} ---")
+            logger(f"\n--- Comparando {issue1.key} e {issue2.key} ---")
         for i, criterion in enumerate(rank_by_list):
             val1 = get_value_for_criterion(issue1, criterion)
             val2 = get_value_for_criterion(issue2, criterion)
             order = order_list[i]
 
             if debug:
-                print(f"  Critério '{criterion}' (ordem: {order}): val1={val1}, val2={val2}")
+                logger(f"  Critério '{criterion}' (ordem: {order}): val1={val1}, val2={val2}")
 
             if val1 is None and val2 is not None:
                 return 1
@@ -331,19 +343,19 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
                 return -1
             if val1 is None and val2 is None:
                 if debug:
-                    print("  > Ambos nulos. Empate.")
+                    logger("  > Ambos nulos. Empate.")
                 continue
 
             try:
                 if val1 < val2:
                     result = -1 if order == 'asc' else 1
                     if debug:
-                        print(f"  > {val1} < {val2}. Resultado: {result}")
+                        logger(f"  > {val1} < {val2}. Resultado: {result}")
                     return result
                 if val1 > val2:
                     result = 1 if order == 'asc' else -1
                     if debug:
-                        print(f"  > {val1} > {val2}. Resultado: {result}")
+                        logger(f"  > {val1} > {val2}. Resultado: {result}")
                     return result
             except TypeError:
                 s1 = str(val1)
@@ -351,103 +363,114 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
                 if s1 < s2:
                     result = -1 if order == 'asc' else 1
                     if debug:
-                        print(f"  > {s1} < {s2}. Resultado: {result}")
+                        logger(f"  > {s1} < {s2}. Resultado: {result}")
                     return result
                 if s1 > s2:
                     result = 1 if order == 'asc' else -1
                     if debug:
-                        print(f"  > {s1} > {s2}. Resultado: {result}")
+                        logger(f"  > {s1} > {s2}. Resultado: {result}")
                     return result
 
             if debug:
-                print("  > Iguais. Empate, próximo critério.")
+                logger("  > Iguais. Empate, próximo critério.")
         if debug:
-            print("--- Fim da Comparação: Iguais ---")
+            logger("--- Fim da Comparação: Iguais ---")
         return 0
 
     try:
         sorted_child_issues = sorted(child_issues, key=cmp_to_key(compare_issues))
         if verbose:
-            print(f"\nIssues ordenadas com sucesso por: {', '.join(rank_by_list)}.")
+            logger(f"\nIssues ordenadas com sucesso por: {', '.join(rank_by_list)}.")
     except Exception as e:
-        print(f"Erro inesperado ao ordenar as issues em memória: {e}")
+        logger(f"Erro inesperado ao ordenar as issues em memória: {e}")
         if debug:
-            print(traceback.format_exc())
+            logger(traceback.format_exc())
         return len(child_issues), 0
 
     proposed_order_keys = [issue.key for issue in sorted_child_issues]
 
     if current_order_keys == proposed_order_keys:
         if brief:
-            print(f"{parent_key}: nenhuma ordenação necessária.")
+            logger(f"{parent_key}: nenhuma ordenação necessária.")
         else:
-            print("\nAs issues já estão na ordem desejada. Nenhuma alteração é necessária.")
+            logger("\nAs issues já estão na ordem desejada. Nenhuma alteração é necessária.")
         return len(child_issues), 0
 
     if brief and dry_run:
         # Modo sucinto em dry-run: contar e retornar sem aplicar mudanças
         moved = sum(1 for i, k in enumerate(proposed_order_keys) if current_order_keys[i] != k)
-        print(f"{parent_key}: {len(sorted_child_issues)} filhas ordenadas.")
+        logger(f"{parent_key}: {len(sorted_child_issues)} filhas ordenadas.")
         return len(sorted_child_issues), moved
 
     # Impressão detalhada (não-brief)
     if not brief:
-        print("\n--- Ordem Proposta (Final) ---")
+        logger("\n--- Ordem Proposta (Final) ---")
         for issue in sorted_child_issues:
             rank_value = getattr(issue.fields, rank_field_id, 'N/A') if rank_field_id else 'N/A'
-            print(f"  - {issue.key} (Rank atual: {rank_value})")
-        print("----------------------------")
+            logger(f"  - {issue.key} (Rank atual: {rank_value})")
+        logger("----------------------------")
 
     if dry_run:
         if verbose:
-            print("\nMODO DRY-RUN ATIVADO. Nenhuma alteração será aplicada no Jira.")
+            logger("\nMODO DRY-RUN ATIVADO. Nenhuma alteração será aplicada no Jira.")
         moved = sum(1 for i, k in enumerate(proposed_order_keys) if current_order_keys[i] != k)
         return len(sorted_child_issues), moved
 
-    print("\nIniciando o processo de reordenação no Jira (isso pode levar um tempo)...")
+    logger("\nIniciando o processo de reordenação no Jira (isso pode levar um tempo)...")
 
     try:
         server_url = client._options['server'].rstrip('/')
         rank_url = f"{server_url}/rest/agile/1.0/issue/rank"
 
-        previous_issue_key = sorted_child_issues[0].key
-        for i in range(1, len(sorted_child_issues)):
-            current_issue_key = sorted_child_issues[i].key
-            print(f"  - Movendo '{current_issue_key}' para depois de '{previous_issue_key}'...")
+        batch_size = max(1, batch_size)
+        total_issues = len(sorted_child_issues)
+
+        i = 1
+        ref_issue_key = sorted_child_issues[0].key
+        while i < total_issues:
+            batch_issues = sorted_child_issues[i:i + batch_size]
+            batch_keys = [issue.key for issue in batch_issues]
+
+            if len(batch_keys) == 1:
+                logger(f"  - Movendo '{batch_keys[0]}' para depois de '{ref_issue_key}'...")
+            else:
+                logger(f"  - Movendo lote de {len(batch_keys)} issues ({', '.join(batch_keys)}) para depois de '{ref_issue_key}'...")
 
             payload = {
-                "issues": [current_issue_key],
-                "rankAfterIssue": previous_issue_key
+                "issues": batch_keys,
+                "rankAfterIssue": ref_issue_key
             }
             response = client._session.put(rank_url, json=payload)
             response.raise_for_status()
             if debug or verbose:
-                print(f"    -> API response: {response.status_code} {response.reason}")
+                logger(f"    -> API response: {response.status_code} {response.reason}")
 
-            previous_issue_key = current_issue_key
+            ref_issue_key = batch_keys[-1]
+            i += batch_size
 
     except Exception as e:
         check_and_handle_401(e)
-        print("\nOcorreu um erro durante a reordenação via API do Jira.")
-        print("É possível que a ordenação tenha sido parcialmente aplicada.")
-        print(f"Erro: {e}")
+        logger("\nOcorreu um erro durante a reordenação via API do Jira.")
+        logger("É possível que a ordenação tenha sido parcialmente aplicada.")
+        logger(f"Erro: {e}")
         if debug:
-            print(traceback.format_exc())
+            logger(traceback.format_exc())
         moved = sum(1 for i, k in enumerate(proposed_order_keys) if current_order_keys[i] != k)
         return len(sorted_child_issues), moved
 
-    print("\nReordenação concluída com sucesso!")
+    logger("\nReordenação concluída com sucesso!")
     moved = sum(1 for i, k in enumerate(proposed_order_keys) if current_order_keys[i] != k)
     if brief:
         # Em modo breve, apenas uma linha resumo por épico
-        print(f"{parent_key}: {len(sorted_child_issues)} filhas ordenadas.")
+        logger(f"{parent_key}: {len(sorted_child_issues)} filhas ordenadas.")
     return len(sorted_child_issues), moved
 
 
-def rank_issues_collection(client, label, issues, rank_by_list, order_list, dry_run=False, debug=False, status_order=None, issuetype_order=None, epic_order=None, brief=False, epic_field_id=None, sprint_field_id=None, severity_field_id=None, severity_order=None):
+def rank_issues_collection(client, label, issues, rank_by_list, order_list, dry_run=False, debug=False, status_order=None, issuetype_order=None, epic_order=None, brief=False, epic_field_id=None, sprint_field_id=None, severity_field_id=None, severity_order=None, batch_size=50, log_buffer=None):
     """Ordena e opcionalmente aplica ordenação para uma coleção arbitrária de issues."""
+    logger = make_logger(log_buffer)
     if not rank_by_list:
-        print(f"Erro: parâmetro 'rank_by_list' vazio para {label}. Pulando.")
+        logger(f"Erro: parâmetro 'rank_by_list' vazio para {label}. Pulando.")
         return 0, 0
     if isinstance(rank_by_list, str):
         rank_by_list = [s.strip() for s in rank_by_list.split(',')]
@@ -456,7 +479,7 @@ def rank_issues_collection(client, label, issues, rank_by_list, order_list, dry_
 
     verbose = not brief
     if verbose:
-        print(f"\n--- Processando coleção: {label} (issues: {len(issues)}) ---")
+        logger(f"\n--- Processando coleção: {label} (issues: {len(issues)}) ---")
 
     rank_field_id = get_rank_field_id(client)
 
@@ -620,14 +643,14 @@ def rank_issues_collection(client, label, issues, rank_by_list, order_list, dry_
 
     def compare_issues(issue1, issue2):
         if debug:
-            print(f"\n--- Comparando {issue1.key} e {issue2.key} ---")
+            logger(f"\n--- Comparando {issue1.key} e {issue2.key} ---")
         for i, criterion in enumerate(rank_by_list):
             val1 = get_value_for_criterion(issue1, criterion)
             val2 = get_value_for_criterion(issue2, criterion)
             order = order_list[i]
 
             if debug:
-                print(f"  Critério '{criterion}' (ordem: {order}): val1={val1}, val2={val2}")
+                logger(f"  Critério '{criterion}' (ordem: {order}): val1={val1}, val2={val2}")
 
             if val1 is None and val2 is not None:
                 return 1
@@ -635,19 +658,19 @@ def rank_issues_collection(client, label, issues, rank_by_list, order_list, dry_
                 return -1
             if val1 is None and val2 is None:
                 if debug:
-                    print("  > Ambos nulos. Empate.")
+                    logger("  > Ambos nulos. Empate.")
                 continue
 
             try:
                 if val1 < val2:
                     result = -1 if order == 'asc' else 1
                     if debug:
-                        print(f"  > {val1} < {val2}. Resultado: {result}")
+                        logger(f"  > {val1} < {val2}. Resultado: {result}")
                     return result
                 if val1 > val2:
                     result = 1 if order == 'asc' else -1
                     if debug:
-                        print(f"  > {val1} > {val2}. Resultado: {result}")
+                        logger(f"  > {val1} > {val2}. Resultado: {result}")
                     return result
             except TypeError:
                 s1 = str(val1)
@@ -655,46 +678,46 @@ def rank_issues_collection(client, label, issues, rank_by_list, order_list, dry_
                 if s1 < s2:
                     result = -1 if order == 'asc' else 1
                     if debug:
-                        print(f"  > {s1} < {s2}. Resultado: {result}")
+                        logger(f"  > {s1} < {s2}. Resultado: {result}")
                     return result
                 if s1 > s2:
                     result = 1 if order == 'asc' else -1
                     if debug:
-                        print(f"  > {s1} > {s2}. Resultado: {result}")
+                        logger(f"  > {s1} > {s2}. Resultado: {result}")
                     return result
 
             if debug:
-                print("  > Iguais. Empate, próximo critério.")
+                logger("  > Iguais. Empate, próximo critério.")
         if debug:
-            print("--- Fim da Comparação: Iguais ---")
+            logger("--- Fim da Comparação: Iguais ---")
         return 0
 
     try:
         sorted_issues = sorted(issues, key=cmp_to_key(compare_issues))
         if verbose:
-            print(f"\nIssues ordenadas com sucesso por: {', '.join(rank_by_list)}.")
+            logger(f"\nIssues ordenadas com sucesso por: {', '.join(rank_by_list)}.")
     except Exception as e:
-        print(f"Erro inesperado ao ordenar as issues em memória: {e}")
+        logger(f"Erro inesperado ao ordenar as issues em memória: {e}")
         if debug:
-            print(traceback.format_exc())
+            logger(traceback.format_exc())
         return len(issues), 0
 
     proposed_order_keys = [issue.key for issue in sorted_issues]
 
     if current_order_keys == proposed_order_keys:
         if brief:
-            print(f"{label}: nenhuma ordenação necessária.")
+            logger(f"{label}: nenhuma ordenação necessária.")
         else:
-            print("\nAs issues já estão na ordem desejada. Nenhuma alteração é necessária.")
+            logger("\nAs issues já estão na ordem desejada. Nenhuma alteração é necessária.")
         return len(issues), 0
 
     if brief and dry_run:
         moved = sum(1 for i, k in enumerate(proposed_order_keys) if current_order_keys[i] != k)
-        print(f"{label}: {len(sorted_issues)} issues ordenadas.")
+        logger(f"{label}: {len(sorted_issues)} issues ordenadas.")
         return len(sorted_issues), moved
 
     if not brief:
-        print("\n--- Ordem Proposta (Final) ---")
+        logger("\n--- Ordem Proposta (Final) ---")
         # Exibir para cada issue: chave, epic link e destino da movimentação proposta
         for idx, issue in enumerate(sorted_issues):
             # rank atual
@@ -730,51 +753,61 @@ def rank_issues_collection(client, label, issues, rank_by_list, order_list, dry_
             except ValueError:
                 current_pos = 'N/A'
 
-            print(f"  - {issue.key} (Epic: {epic_display}) -> after: {dest} (current pos: {current_pos}, Rank atual: {rank_value})")
+            logger(f"  - {issue.key} (Epic: {epic_display}) -> after: {dest} (current pos: {current_pos}, Rank atual: {rank_value})")
         print("----------------------------")
 
     if dry_run:
         if verbose:
-            print("\nMODO DRY-RUN ATIVADO. Nenhuma alteração será aplicada no Jira.")
+            logger("\nMODO DRY-RUN ATIVADO. Nenhuma alteração será aplicada no Jira.")
         moved = sum(1 for i, k in enumerate(proposed_order_keys) if current_order_keys[i] != k)
         return len(sorted_issues), moved
 
-    print("\nIniciando o processo de reordenação no Jira (isso pode levar um tempo)...")
+    logger("\nIniciando o processo de reordenação no Jira (isso pode levar um tempo)...")
 
     try:
         server_url = client._options['server'].rstrip('/')
         rank_url = f"{server_url}/rest/agile/1.0/issue/rank"
 
-        previous_issue_key = sorted_issues[0].key
-        for i in range(1, len(sorted_issues)):
-            current_issue_key = sorted_issues[i].key
-            print(f"  - Movendo '{current_issue_key}' para depois de '{previous_issue_key}'...")
+        batch_size = max(1, batch_size)
+        total_issues = len(sorted_issues)
+
+        i = 1
+        ref_issue_key = sorted_issues[0].key
+        while i < total_issues:
+            batch_issues = sorted_issues[i:i + batch_size]
+            batch_keys = [issue.key for issue in batch_issues]
+
+            if len(batch_keys) == 1:
+                logger(f"  - Movendo '{batch_keys[0]}' para depois de '{ref_issue_key}'...")
+            else:
+                logger(f"  - Movendo lote de {len(batch_keys)} issues ({', '.join(batch_keys)}) para depois de '{ref_issue_key}'...")
 
             payload = {
-                "issues": [current_issue_key],
-                "rankAfterIssue": previous_issue_key
+                "issues": batch_keys,
+                "rankAfterIssue": ref_issue_key
             }
             response = client._session.put(rank_url, json=payload)
             response.raise_for_status()
             if debug or verbose:
-                print(f"    -> API response: {response.status_code} {response.reason}")
+                logger(f"    -> API response: {response.status_code} {response.reason}")
 
-            previous_issue_key = current_issue_key
+            ref_issue_key = batch_keys[-1]
+            i += batch_size
 
     except Exception as e:
         check_and_handle_401(e)
-        print("\nOcorreu um erro durante a reordenação via API do Jira.")
-        print("É possível que a ordenação tenha sido parcialmente aplicada.")
-        print(f"Erro: {e}")
+        logger("\nOcorreu um erro durante a reordenação via API do Jira.")
+        logger("É possível que a ordenação tenha sido parcialmente aplicada.")
+        logger(f"Erro: {e}")
         if debug:
-            print(traceback.format_exc())
+            logger(traceback.format_exc())
         moved = sum(1 for i, k in enumerate(proposed_order_keys) if current_order_keys[i] != k)
         return len(sorted_issues), moved
 
-    print("\nReordenação concluída com sucesso!")
+    logger("\nReordenação concluída com sucesso!")
     moved = sum(1 for i, k in enumerate(proposed_order_keys) if current_order_keys[i] != k)
     if brief:
-        print(f"{label}: {len(sorted_issues)} issues ordenadas.")
+        logger(f"{label}: {len(sorted_issues)} issues ordenadas.")
     return len(sorted_issues), moved
 
 
@@ -821,6 +854,8 @@ if __name__ == "__main__":
     parser.add_argument('--debug', action='store_true', help='Ativa a saída de depuração detalhada para a lógica de ordenação.')
     parser.add_argument('--brief', action='store_true', help='Saída sucinta: para cada épico imprime apenas uma linha resumo sobre a ordenação (útil para logs).')
     parser.add_argument('--epic-order', type=list_of_str, default=config.get('epic-order'), help='Lista de chaves de épicos definindo ordem customizada por épicos. Ex: --epic-order ABC-1,ABC-2')
+    parser.add_argument('--batch-size', type=int, default=config.get('batch-size', 50), help="Tamanho do lote de issues para envio à API do Jira. Use 1 para desativar o loteamento.")
+    parser.add_argument('--max-workers', type=int, default=config.get('max-workers', 4), help="Número máximo de threads paralelas para processamento de múltiplos épicos.")
 
     args = parser.parse_args()
 
@@ -945,28 +980,72 @@ if __name__ == "__main__":
                 print(f"Nenhum épico encontrado no projeto '{project_id}'.")
             else:
                 print(f"Encontrados {len(epics)} épicos. Processando cada um...")
-                epics_processed = 0
+                import concurrent.futures
+
+                max_workers = args.max_workers
                 total_children_analyzed = 0
                 total_children_reordered = 0
-                for epic in epics:
-                    epics_processed += 1
-                    children, moved = rank_child_issues(
-                        jira_client,
-                        epic.key,
-                        args.rank_by,
-                        args.order,
-                        args.dry_run,
-                        args.debug,
-                        args.status_order,
-                        args.issuetype_order,
-                        brief=args.brief,
-                        epic_field_id=epic_field_id,
-                        sprint_field_id=sprint_field_id,
-                        severity_field_id=severity_field_id,
-                        severity_order=args.severity_order,
-                    )
-                    total_children_analyzed += children
-                    total_children_reordered += moved
+
+                if max_workers is None or max_workers <= 1:
+                    epics_processed = 0
+                    for epic in epics:
+                        epics_processed += 1
+                        children, moved = rank_child_issues(
+                            jira_client,
+                            epic.key,
+                            args.rank_by,
+                            args.order,
+                            args.dry_run,
+                            args.debug,
+                            args.status_order,
+                            args.issuetype_order,
+                            brief=args.brief,
+                            epic_field_id=epic_field_id,
+                            sprint_field_id=sprint_field_id,
+                            severity_field_id=severity_field_id,
+                            severity_order=args.severity_order,
+                            batch_size=args.batch_size,
+                        )
+                        total_children_analyzed += children
+                        total_children_reordered += moved
+                else:
+                    epics_processed = len(epics)
+
+                    def process_epic(epic):
+                        log_buf = []
+                        try:
+                            children, moved = rank_child_issues(
+                                jira_client,
+                                epic.key,
+                                args.rank_by,
+                                args.order,
+                                args.dry_run,
+                                args.debug,
+                                args.status_order,
+                                args.issuetype_order,
+                                brief=args.brief,
+                                epic_field_id=epic_field_id,
+                                sprint_field_id=sprint_field_id,
+                                severity_field_id=severity_field_id,
+                                severity_order=args.severity_order,
+                                batch_size=args.batch_size,
+                                log_buffer=log_buf
+                            )
+                            return children, moved, log_buf, None
+                        except Exception as thread_e:
+                            return 0, 0, log_buf, thread_e
+
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                        futures = [executor.submit(process_epic, epic) for epic in epics]
+                        for future in futures:
+                            children, moved, log_buf, err = future.result()
+                            if log_buf:
+                                print("\n".join(log_buf))
+                            if err:
+                                print(f"Erro ao processar épico: {err}")
+                            total_children_analyzed += children
+                            total_children_reordered += moved
+
                 print(f"\nResumo: Épicos processados: {epics_processed}; Filhos analisados: {total_children_analyzed}; Filhos reordenados (ou que mudariam): {total_children_reordered}")
         elif sprint_list:
             sprint_name = ", ".join(sprint_list)
@@ -1033,6 +1112,7 @@ if __name__ == "__main__":
                     sprint_field_id=sprint_field_id,
                     severity_field_id=severity_field_id,
                     severity_order=args.severity_order,
+                    batch_size=args.batch_size,
                 )
                 sprints_count = len(sprint_list)
                 if sprints_count == 1:
@@ -1054,6 +1134,7 @@ if __name__ == "__main__":
                 sprint_field_id=sprint_field_id,
                 severity_field_id=severity_field_id,
                 severity_order=args.severity_order,
+                batch_size=args.batch_size,
             )
             print(f"\nResumo: Épicos processados: 1; Filhos analisados: {children}; Filhos reordenados (ou que mudariam): {moved}")
 
