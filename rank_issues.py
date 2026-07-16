@@ -98,7 +98,124 @@ def make_logger(log_buffer=None):
     return log
 
 
-def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=False, debug=False, status_order=None, issuetype_order=None, brief=False, epic_field_id=None, sprint_field_id=None, severity_field_id=None, severity_order=None, batch_size=50, log_buffer=None):
+def get_issuetype_emoji(name):
+    if not name:
+        return "❓"
+    name_lower = name.lower().strip()
+    if "bug" in name_lower:
+        return "🐛"
+    if "melhoria" in name_lower or "improvement" in name_lower:
+        return "⚡"
+    if "story" in name_lower or "história" in name_lower or "historia" in name_lower:
+        return "📖"
+    if "task" in name_lower or "tarefa" in name_lower:
+        return "📋"
+    if "epic" in name_lower or "épico" in name_lower or "epico" in name_lower:
+        return "👑"
+    return "❓"
+
+
+def get_priority_emoji(priority):
+    if not priority:
+        return "⚪"
+    name = priority.name.lower() if hasattr(priority, 'name') else str(priority).lower()
+    pid = str(priority.id) if hasattr(priority, 'id') else str(priority)
+    if pid == '1' or 'highest' in name or 'crítico' in name or 'critico' in name or 'urgente' in name:
+        return "🔴"
+    if pid == '2' or 'high' in name or 'alta' in name:
+        return "🟠"
+    if pid == '3' or 'medium' in name or 'média' in name or 'media' in name:
+        return "🟡"
+    if pid == '4' or 'low' in name or 'baixa' in name:
+        return "🟢"
+    if pid == '5' or 'lowest' in name or 'muito baixa' in name:
+        return "🔵"
+    return "⚪"
+
+
+def get_severity_emoji(severity_val):
+    if not severity_val:
+        return "⚪"
+    val_str = severity_val.value if hasattr(severity_val, 'value') else str(severity_val)
+    name = val_str.lower().strip()
+    if "bloqueante" in name or "blocker" in name:
+        return "🛑"
+    if "crítico" in name or "critico" in name or "critical" in name:
+        return "🚨"
+    if "normal" in name:
+        return "🟢"
+    return "⚪"
+
+
+def get_status_emoji(status):
+    if not status:
+        return "⚪"
+    name = status.name.lower() if hasattr(status, 'name') else str(status).lower()
+    name = name.strip()
+    if "pendência" in name or "pendencia" in name or "pending" in name:
+        return "⚠️"
+    if "em teste" in name or "testing" in name:
+        return "🧪"
+    if "pronto para teste" in name or "ready for test" in name:
+        return "📥"
+    if "em andamento" in name or "in progress" in name:
+        return "🏃"
+    if "novo" in name or "new" in name:
+        return "🆕"
+    if "a fazer" in name or "to do" in name:
+        return "📋"
+    if "backlog" in name:
+        return "📥"
+    if "resolvido" in name or "resolved" in name:
+        return "✅"
+    if "homologação" in name or "homologacao" in name:
+        return "🔄"
+    if "fechado" in name or "closed" in name or "done" in name or "pronto" in name:
+        return "🔒"
+    if "cancelado" in name or "cancelled" in name or "canceled" in name:
+        return "❌"
+    return "ℹ️"
+
+
+def format_issue_info(issue, rank_by_list, epic_field_id, severity_field_id):
+    target_fields = ['issuetype', 'priority', 'severity', 'status', 'summary']
+    sorting_fields = [f for f in rank_by_list if f in target_fields]
+    non_sorting_fields = [f for f in target_fields if f not in sorting_fields]
+    fields_order = sorting_fields + non_sorting_fields
+
+    parts = []
+    for f in fields_order:
+        if f == 'issuetype':
+            val = getattr(issue.fields, 'issuetype', None)
+            name = val.name if val else None
+            parts.append(get_issuetype_emoji(name))
+        elif f == 'priority':
+            val = getattr(issue.fields, 'priority', None)
+            parts.append(get_priority_emoji(val))
+        elif f == 'severity':
+            severity_val = None
+            if severity_field_id:
+                severity_val = issue.raw.get('fields', {}).get(severity_field_id)
+            if not severity_val:
+                if hasattr(issue.fields, 'severity'):
+                    severity_val = getattr(issue.fields, 'severity')
+                else:
+                    for k, v in (issue.raw.get('fields') or {}).items():
+                        if k and 'severity' in k.lower():
+                            severity_val = v
+                            break
+            parts.append(get_severity_emoji(severity_val))
+        elif f == 'status':
+            val = getattr(issue.fields, 'status', None)
+            parts.append(get_status_emoji(val))
+        elif f == 'summary':
+            val = getattr(issue.fields, 'summary', '')
+            parts.append(val if val else '')
+
+    return " ".join(parts)
+
+
+def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=False, debug=False, status_order=None, issuetype_order=None, brief=False, epic_field_id=None, sprint_field_id=None, severity_field_id=None, severity_order=None, batch_size=50, log_buffer=None, rank_subtasks=False):
     """Busca, ordena e, opcionalmente, reordena as issues filhas de uma issue pai."""
     logger = make_logger(log_buffer)
     if not rank_by_list:
@@ -161,9 +278,13 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
 
     try:
         fields_to_fetch = set(rank_by_list)
-        fields_to_fetch.update(['priority', 'status', 'issuetype'])
+        fields_to_fetch.update(['priority', 'status', 'issuetype', 'summary'])
         if rank_field_id:
             fields_to_fetch.add(rank_field_id)
+        if severity_field_id:
+            fields_to_fetch.add(severity_field_id)
+        if rank_subtasks:
+            fields_to_fetch.add('subtasks')
         # Se 'epic' for critério, troque pelo ID real do campo (quando disponível)
         if 'epic' in fields_to_fetch and epic_field_id:
             fields_to_fetch.discard('epic')
@@ -173,9 +294,10 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
             fields_to_fetch.discard('sprint')
             fields_to_fetch.add(sprint_field_id)
         # Se 'severity' for critério, troque pelo ID real do campo (quando disponível)
-        if 'severity' in fields_to_fetch and severity_field_id:
+        if 'severity' in fields_to_fetch:
             fields_to_fetch.discard('severity')
-            fields_to_fetch.add(severity_field_id)
+            if severity_field_id:
+                fields_to_fetch.add(severity_field_id)
 
         child_issues = client.search_issues(jql, maxResults=False, fields=list(fields_to_fetch))
     except Exception as e:
@@ -390,83 +512,97 @@ def rank_child_issues(client, parent_key, rank_by_list, order_list, dry_run=Fals
     proposed_order_keys = [issue.key for issue in sorted_child_issues]
 
     if current_order_keys == proposed_order_keys:
-        if brief:
-            logger(f"{parent_key}: nenhuma ordenação necessária.")
-        else:
-            logger("\nAs issues já estão na ordem desejada. Nenhuma alteração é necessária.")
-        return len(child_issues), 0
-
-    if brief and dry_run:
-        # Modo sucinto em dry-run: contar e retornar sem aplicar mudanças
-        moved = sum(1 for i, k in enumerate(proposed_order_keys) if current_order_keys[i] != k)
-        logger(f"{parent_key}: {len(sorted_child_issues)} filhas ordenadas.")
-        return len(sorted_child_issues), moved
-
-    # Impressão detalhada (não-brief)
-    if not brief:
-        logger("\n--- Ordem Proposta (Final) ---")
-        for issue in sorted_child_issues:
-            rank_value = getattr(issue.fields, rank_field_id, 'N/A') if rank_field_id else 'N/A'
-            logger(f"  - {issue.key} (Rank atual: {rank_value})")
-        logger("----------------------------")
-
-    if dry_run:
-        if verbose:
-            logger("\nMODO DRY-RUN ATIVADO. Nenhuma alteração será aplicada no Jira.")
-        moved = sum(1 for i, k in enumerate(proposed_order_keys) if current_order_keys[i] != k)
-        return len(sorted_child_issues), moved
-
-    logger("\nIniciando o processo de reordenação no Jira (isso pode levar um tempo)...")
-
-    try:
-        server_url = client._options['server'].rstrip('/')
-        rank_url = f"{server_url}/rest/agile/1.0/issue/rank"
-
-        batch_size = max(1, batch_size)
-        total_issues = len(sorted_child_issues)
-
-        i = 1
-        ref_issue_key = sorted_child_issues[0].key
-        while i < total_issues:
-            batch_issues = sorted_child_issues[i:i + batch_size]
-            batch_keys = [issue.key for issue in batch_issues]
-
-            if len(batch_keys) == 1:
-                logger(f"  - Movendo '{batch_keys[0]}' para depois de '{ref_issue_key}'...")
+        if not rank_subtasks:
+            if brief:
+                logger(f"{parent_key}: nenhuma ordenação necessária.")
             else:
-                logger(f"  - Movendo lote de {len(batch_keys)} issues ({', '.join(batch_keys)}) para depois de '{ref_issue_key}'...")
+                logger("\nAs issues já estão na ordem desejada. Nenhuma alteração é necessária.")
+            return len(child_issues), 0
 
-            payload = {
-                "issues": batch_keys,
-                "rankAfterIssue": ref_issue_key
-            }
-            response = client._session.put(rank_url, json=payload)
-            response.raise_for_status()
-            if debug or verbose:
-                logger(f"    -> API response: {response.status_code} {response.reason}")
-
-            ref_issue_key = batch_keys[-1]
-            i += batch_size
-
-    except Exception as e:
-        check_and_handle_401(e)
-        logger("\nOcorreu um erro durante a reordenação via API do Jira.")
-        logger("É possível que a ordenação tenha sido parcialmente aplicada.")
-        logger(f"Erro: {e}")
-        if debug:
-            logger(traceback.format_exc())
-        moved = sum(1 for i, k in enumerate(proposed_order_keys) if current_order_keys[i] != k)
-        return len(sorted_child_issues), moved
-
-    logger("\nReordenação concluída com sucesso!")
     moved = sum(1 for i, k in enumerate(proposed_order_keys) if current_order_keys[i] != k)
-    if brief:
-        # Em modo breve, apenas uma linha resumo por épico
-        logger(f"{parent_key}: {len(sorted_child_issues)} filhas ordenadas.")
-    return len(sorted_child_issues), moved
+    needs_reordering = (moved > 0)
+
+    if needs_reordering:
+        if brief and dry_run:
+            if not rank_subtasks:
+                logger(f"{parent_key}: {len(sorted_child_issues)} filhas ordenadas.")
+                return len(sorted_child_issues), moved
+
+        # Impressão detalhada (não-brief)
+        if not brief:
+            logger("\n--- Ordem Proposta (Final) ---")
+            for issue in sorted_child_issues:
+                rank_value = getattr(issue.fields, rank_field_id, 'N/A') if rank_field_id else 'N/A'
+                issue_info = format_issue_info(issue, rank_by_list, epic_field_id, severity_field_id)
+                logger(f"  - {issue.key} | {issue_info} (Rank atual: {rank_value})")
+            logger("----------------------------")
+
+        if dry_run:
+            if verbose and not brief:
+                logger("\nMODO DRY-RUN ATIVADO. Nenhuma alteração será aplicada no Jira.")
+        else:
+            logger("\nIniciando o processo de reordenação no Jira (isso pode levar um tempo)...")
+            try:
+                server_url = client._options['server'].rstrip('/')
+                rank_url = f"{server_url}/rest/agile/1.0/issue/rank"
+                batch_size = max(1, batch_size)
+                total_issues = len(sorted_child_issues)
+                i = 1
+                ref_issue_key = sorted_child_issues[0].key
+                while i < total_issues:
+                    batch_issues = sorted_child_issues[i:i + batch_size]
+                    batch_keys = [issue.key for issue in batch_issues]
+                    if len(batch_keys) == 1:
+                        logger(f"  - Movendo '{batch_keys[0]}' para depois de '{ref_issue_key}'...")
+                    else:
+                        logger(f"  - Movendo lote de {len(batch_keys)} issues ({', '.join(batch_keys)}) para depois de '{ref_issue_key}'...")
+                    payload = {
+                        "issues": batch_keys,
+                        "rankAfterIssue": ref_issue_key
+                    }
+                    response = client._session.put(rank_url, json=payload)
+                    response.raise_for_status()
+                    if debug or verbose:
+                        logger(f"    -> API response: {response.status_code} {response.reason}")
+                    ref_issue_key = batch_keys[-1]
+                    i += batch_size
+                logger("\nReordenação concluída com sucesso!")
+            except Exception as e:
+                check_and_handle_401(e)
+                logger("\nOcorreu um erro durante a reordenação via API do Jira.")
+                logger("É possível que a ordenação tenha sido parcialmente aplicada.")
+                logger(f"Erro: {e}")
+                if debug:
+                    logger(traceback.format_exc())
+    else:
+        if not brief:
+            logger("\nAs issues já estão na ordem desejada. Nenhuma alteração é necessária.")
+
+    total_analyzed = len(sorted_child_issues)
+    total_moved = moved
+
+    if parent_issue.fields.issuetype.name in ['Epic', 'Épico'] and rank_subtasks:
+        for child in sorted_child_issues:
+            if hasattr(child.fields, 'subtasks') and child.fields.subtasks:
+                if verbose:
+                    logger(f"\n[Subtarefas] Ordenando subtarefas de {child.key}...")
+                sub_analyzed, sub_moved = rank_child_issues(
+                    client, child.key, rank_by_list, order_list,
+                    dry_run=dry_run, debug=debug, status_order=status_order,
+                    issuetype_order=issuetype_order, brief=brief,
+                    epic_field_id=epic_field_id, sprint_field_id=sprint_field_id,
+                    severity_field_id=severity_field_id, severity_order=severity_order,
+                    batch_size=batch_size, log_buffer=log_buffer, rank_subtasks=False
+                )
+                total_analyzed += sub_analyzed
+                total_moved += sub_moved
+
+    if brief and (needs_reordering or rank_subtasks):
+        logger(f"{parent_key}: {total_analyzed} filhas ordenadas.")
+    return total_analyzed, total_moved
 
 
-def rank_issues_collection(client, label, issues, rank_by_list, order_list, dry_run=False, debug=False, status_order=None, issuetype_order=None, epic_order=None, brief=False, epic_field_id=None, sprint_field_id=None, severity_field_id=None, severity_order=None, batch_size=50, log_buffer=None):
+def rank_issues_collection(client, label, issues, rank_by_list, order_list, dry_run=False, debug=False, status_order=None, issuetype_order=None, epic_order=None, brief=False, epic_field_id=None, sprint_field_id=None, severity_field_id=None, severity_order=None, batch_size=50, log_buffer=None, rank_subtasks=False):
     """Ordena e opcionalmente aplica ordenação para uma coleção arbitrária de issues."""
     logger = make_logger(log_buffer)
     if not rank_by_list:
@@ -705,110 +841,126 @@ def rank_issues_collection(client, label, issues, rank_by_list, order_list, dry_
     proposed_order_keys = [issue.key for issue in sorted_issues]
 
     if current_order_keys == proposed_order_keys:
-        if brief:
-            logger(f"{label}: nenhuma ordenação necessária.")
-        else:
-            logger("\nAs issues já estão na ordem desejada. Nenhuma alteração é necessária.")
-        return len(issues), 0
-
-    if brief and dry_run:
-        moved = sum(1 for i, k in enumerate(proposed_order_keys) if current_order_keys[i] != k)
-        logger(f"{label}: {len(sorted_issues)} issues ordenadas.")
-        return len(sorted_issues), moved
-
-    if not brief:
-        logger("\n--- Ordem Proposta (Final) ---")
-        # Exibir para cada issue: chave, epic link e destino da movimentação proposta
-        for idx, issue in enumerate(sorted_issues):
-            # rank atual
-            rank_value = getattr(issue.fields, rank_field_id, 'N/A') if rank_field_id else 'N/A'
-            # tentar obter epic link bruto para exibição
-            epic_display = None
-            try:
-                if epic_field_id:
-                    epic_display = issue.raw.get('fields', {}).get(epic_field_id)
-                if not epic_display and hasattr(issue.fields, 'epic'):
-                    epic_display = getattr(issue.fields, 'epic')
-                if not epic_display and hasattr(issue.fields, 'Epic'):
-                    epic_display = getattr(issue.fields, 'Epic')
-                if not epic_display:
-                    for k, v in (issue.raw.get('fields') or {}).items():
-                        if k and 'epic' in k.lower():
-                            epic_display = v
-                            break
-                if epic_display is None:
-                    epic_display = 'N/A'
-            except Exception:
-                epic_display = 'N/A'
-
-            # destino proposto: depois do anterior na lista ordenada
-            if idx == 0:
-                dest = 'TOP'
+        if not rank_subtasks:
+            if brief:
+                logger(f"{label}: nenhuma ordenação necessária.")
             else:
-                dest = sorted_issues[idx - 1].key
+                logger("\nAs issues já estão na ordem desejada. Nenhuma alteração é necessária.")
+            return len(issues), 0
 
-            # posição atual (se conhecida)
-            try:
-                current_pos = current_order_keys.index(issue.key) + 1
-            except ValueError:
-                current_pos = 'N/A'
-
-            logger(f"  - {issue.key} (Epic: {epic_display}) -> after: {dest} (current pos: {current_pos}, Rank atual: {rank_value})")
-        print("----------------------------")
-
-    if dry_run:
-        if verbose:
-            logger("\nMODO DRY-RUN ATIVADO. Nenhuma alteração será aplicada no Jira.")
-        moved = sum(1 for i, k in enumerate(proposed_order_keys) if current_order_keys[i] != k)
-        return len(sorted_issues), moved
-
-    logger("\nIniciando o processo de reordenação no Jira (isso pode levar um tempo)...")
-
-    try:
-        server_url = client._options['server'].rstrip('/')
-        rank_url = f"{server_url}/rest/agile/1.0/issue/rank"
-
-        batch_size = max(1, batch_size)
-        total_issues = len(sorted_issues)
-
-        i = 1
-        ref_issue_key = sorted_issues[0].key
-        while i < total_issues:
-            batch_issues = sorted_issues[i:i + batch_size]
-            batch_keys = [issue.key for issue in batch_issues]
-
-            if len(batch_keys) == 1:
-                logger(f"  - Movendo '{batch_keys[0]}' para depois de '{ref_issue_key}'...")
-            else:
-                logger(f"  - Movendo lote de {len(batch_keys)} issues ({', '.join(batch_keys)}) para depois de '{ref_issue_key}'...")
-
-            payload = {
-                "issues": batch_keys,
-                "rankAfterIssue": ref_issue_key
-            }
-            response = client._session.put(rank_url, json=payload)
-            response.raise_for_status()
-            if debug or verbose:
-                logger(f"    -> API response: {response.status_code} {response.reason}")
-
-            ref_issue_key = batch_keys[-1]
-            i += batch_size
-
-    except Exception as e:
-        check_and_handle_401(e)
-        logger("\nOcorreu um erro durante a reordenação via API do Jira.")
-        logger("É possível que a ordenação tenha sido parcialmente aplicada.")
-        logger(f"Erro: {e}")
-        if debug:
-            logger(traceback.format_exc())
-        moved = sum(1 for i, k in enumerate(proposed_order_keys) if current_order_keys[i] != k)
-        return len(sorted_issues), moved
-
-    logger("\nReordenação concluída com sucesso!")
     moved = sum(1 for i, k in enumerate(proposed_order_keys) if current_order_keys[i] != k)
-    if brief:
-        logger(f"{label}: {len(sorted_issues)} issues ordenadas.")
-    return len(sorted_issues), moved
+    needs_reordering = (moved > 0)
+
+    if needs_reordering:
+        if brief and dry_run:
+            if not rank_subtasks:
+                logger(f"{label}: {len(sorted_issues)} issues ordenadas.")
+                return len(sorted_issues), moved
+
+        if not brief:
+            logger("\n--- Ordem Proposta (Final) ---")
+            # Exibir para cada issue: chave, epic link e destino da movimentação proposta
+            for idx, issue in enumerate(sorted_issues):
+                # rank atual
+                rank_value = getattr(issue.fields, rank_field_id, 'N/A') if rank_field_id else 'N/A'
+                # tentar obter epic link bruto para exibição
+                epic_display = None
+                try:
+                    if epic_field_id:
+                        epic_display = issue.raw.get('fields', {}).get(epic_field_id)
+                    if not epic_display and hasattr(issue.fields, 'epic'):
+                        epic_display = getattr(issue.fields, 'epic')
+                    if not epic_display and hasattr(issue.fields, 'Epic'):
+                        epic_display = getattr(issue.fields, 'Epic')
+                    if not epic_display:
+                        for k, v in (issue.raw.get('fields') or {}).items():
+                            if k and 'epic' in k.lower():
+                                epic_display = v
+                                break
+                    if epic_display is None:
+                        epic_display = 'N/A'
+                except Exception:
+                    epic_display = 'N/A'
+
+                # destino proposto: depois do anterior na lista ordenada
+                if idx == 0:
+                    dest = 'TOP'
+                else:
+                    dest = sorted_issues[idx - 1].key
+
+                # posição atual (se conhecida)
+                try:
+                    current_pos = current_order_keys.index(issue.key) + 1
+                except ValueError:
+                    current_pos = 'N/A'
+
+                issue_info = format_issue_info(issue, rank_by_list, epic_field_id, severity_field_id)
+                logger(f"  - {issue.key} | {issue_info} (Epic: {epic_display}) -> after: {dest} (current pos: {current_pos}, Rank atual: {rank_value})")
+            print("----------------------------")
+
+        if dry_run:
+            if verbose and not brief:
+                logger("\nMODO DRY-RUN ATIVADO. Nenhuma alteração será aplicada no Jira.")
+        else:
+            logger("\nIniciando o processo de reordenação no Jira (isso pode levar um tempo)...")
+            try:
+                server_url = client._options['server'].rstrip('/')
+                rank_url = f"{server_url}/rest/agile/1.0/issue/rank"
+                batch_size = max(1, batch_size)
+                total_issues = len(sorted_issues)
+                i = 1
+                ref_issue_key = sorted_issues[0].key
+                while i < total_issues:
+                    batch_issues = sorted_issues[i:i + batch_size]
+                    batch_keys = [issue.key for issue in batch_issues]
+                    if len(batch_keys) == 1:
+                        logger(f"  - Movendo '{batch_keys[0]}' para depois de '{ref_issue_key}'...")
+                    else:
+                        logger(f"  - Movendo lote de {len(batch_keys)} issues ({', '.join(batch_keys)}) para depois de '{ref_issue_key}'...")
+                    payload = {
+                        "issues": batch_keys,
+                        "rankAfterIssue": ref_issue_key
+                    }
+                    response = client._session.put(rank_url, json=payload)
+                    response.raise_for_status()
+                    if debug or verbose:
+                        logger(f"    -> API response: {response.status_code} {response.reason}")
+                    ref_issue_key = batch_keys[-1]
+                    i += batch_size
+                logger("\nReordenação concluída com sucesso!")
+            except Exception as e:
+                check_and_handle_401(e)
+                logger("\nOcorreu um erro durante a reordenação via API do Jira.")
+                logger("É possível que a ordenação tenha sido parcialmente aplicada.")
+                logger(f"Erro: {e}")
+                if debug:
+                    logger(traceback.format_exc())
+    else:
+        if not brief:
+            logger("\nAs issues já estão na ordem desejada. Nenhuma alteração é necessária.")
+
+    total_analyzed = len(sorted_issues)
+    total_moved = moved
+
+    if rank_subtasks:
+        for issue in sorted_issues:
+            if hasattr(issue.fields, 'subtasks') and issue.fields.subtasks:
+                if verbose:
+                    logger(f"\n[Subtarefas] Ordenando subtarefas de {issue.key}...")
+                sub_analyzed, sub_moved = rank_child_issues(
+                    client, issue.key, rank_by_list, order_list,
+                    dry_run=dry_run, debug=debug, status_order=status_order,
+                    issuetype_order=issuetype_order, brief=brief,
+                    epic_field_id=epic_field_id, sprint_field_id=sprint_field_id,
+                    severity_field_id=severity_field_id, severity_order=severity_order,
+                    batch_size=batch_size, log_buffer=log_buffer, rank_subtasks=False
+                )
+                total_analyzed += sub_analyzed
+                total_moved += sub_moved
+
+    if brief and (needs_reordering or rank_subtasks):
+        logger(f"{label}: {total_analyzed} issues ordenadas.")
+    return total_analyzed, total_moved
 
 
 if __name__ == "__main__":
@@ -856,6 +1008,7 @@ if __name__ == "__main__":
     parser.add_argument('--epic-order', type=list_of_str, default=config.get('epic-order'), help='Lista de chaves de épicos definindo ordem customizada por épicos. Ex: --epic-order ABC-1,ABC-2')
     parser.add_argument('--batch-size', type=int, default=config.get('batch-size', 50), help="Tamanho do lote de issues para envio à API do Jira. Use 1 para desativar o loteamento.")
     parser.add_argument('--max-workers', type=int, default=config.get('max-workers', 4), help="Número máximo de threads paralelas para processamento de múltiplos épicos.")
+    parser.add_argument('--rank-subtasks', action='store_true', default=config.get('rank-subtasks', False), help="Ordena também as subtarefas de cada issue encontrada.")
 
     args = parser.parse_args()
 
@@ -1005,6 +1158,7 @@ if __name__ == "__main__":
                             severity_field_id=severity_field_id,
                             severity_order=args.severity_order,
                             batch_size=args.batch_size,
+                            rank_subtasks=args.rank_subtasks,
                         )
                         total_children_analyzed += children
                         total_children_reordered += moved
@@ -1029,7 +1183,8 @@ if __name__ == "__main__":
                                 severity_field_id=severity_field_id,
                                 severity_order=args.severity_order,
                                 batch_size=args.batch_size,
-                                log_buffer=log_buf
+                                log_buffer=log_buf,
+                                rank_subtasks=args.rank_subtasks,
                             )
                             return children, moved, log_buf, None
                         except Exception as thread_e:
@@ -1061,19 +1216,24 @@ if __name__ == "__main__":
             jql_sprint = f'{sprint_clause} AND type IN standardIssueTypes() ORDER BY Rank ASC'
             try:
                 fields_to_fetch = set(args.rank_by)
-                fields_to_fetch.update(['priority', 'status', 'issuetype'])
+                fields_to_fetch.update(['priority', 'status', 'issuetype', 'summary'])
                 rank_field_id = get_rank_field_id(jira_client)
                 if rank_field_id:
                     fields_to_fetch.add(rank_field_id)
+                if severity_field_id:
+                    fields_to_fetch.add(severity_field_id)
+                if args.rank_subtasks:
+                    fields_to_fetch.add('subtasks')
                 if 'epic' in fields_to_fetch and epic_field_id:
                     fields_to_fetch.discard('epic')
                     fields_to_fetch.add(epic_field_id)
                 if 'sprint' in fields_to_fetch and sprint_field_id:
                     fields_to_fetch.discard('sprint')
                     fields_to_fetch.add(sprint_field_id)
-                if 'severity' in fields_to_fetch and severity_field_id:
+                if 'severity' in fields_to_fetch:
                     fields_to_fetch.discard('severity')
-                    fields_to_fetch.add(severity_field_id)
+                    if severity_field_id:
+                        fields_to_fetch.add(severity_field_id)
 
                 try:
                     issues = jira_client.search_issues(jql_sprint, maxResults=False, fields=list(fields_to_fetch))
@@ -1113,6 +1273,7 @@ if __name__ == "__main__":
                     severity_field_id=severity_field_id,
                     severity_order=args.severity_order,
                     batch_size=args.batch_size,
+                    rank_subtasks=args.rank_subtasks,
                 )
                 sprints_count = len(sprint_list)
                 if sprints_count == 1:
@@ -1135,6 +1296,7 @@ if __name__ == "__main__":
                 severity_field_id=severity_field_id,
                 severity_order=args.severity_order,
                 batch_size=args.batch_size,
+                rank_subtasks=args.rank_subtasks,
             )
             print(f"\nResumo: Épicos processados: 1; Filhos analisados: {children}; Filhos reordenados (ou que mudariam): {moved}")
 

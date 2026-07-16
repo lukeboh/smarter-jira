@@ -41,5 +41,6 @@
   "epic-order": [
     "PROJ-1",
     "PROJ-2"
-  ]
+  ],
+  "rank-subtasks": false
 }

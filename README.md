@@ -101,7 +101,8 @@ O script reordena programaticamente as issues filhas de uma issue pai (Épico/St
   "rank-by": ["status", "issuetype"],
   "order": ["asc", "asc"],
   "status-order": ["In Progress", "To Do", "Backlog", "Done"],
-  "issuetype-order": ["Story", "Task", "Bug"]
+  "issuetype-order": ["Story", "Task", "Bug"],
+  "rank-subtasks": false
 }
 ```
 
@@ -122,6 +123,7 @@ O script reordena programaticamente as issues filhas de uma issue pai (Épico/St
 | `--epic-order` | Não | Lista de chaves de épicos (separadas por vírgula) definindo ordem customizada por épicos. Ex: `ABC-1,ABC-2`. |
 | `--brief` | Não | Saída sucinta: imprime uma linha por épico e o resumo final. |
 | `--debug` | Não | Ativa a saída de depuração detalhada para a lógica de ordenação. |
+| `--rank-subtasks` | Não | Se ativado, ordena recursivamente as subtarefas de cada issue encontrada. |
 
 \* **Nota:** Você deve fornecer pelo menos um entre `--parent-key`, `--project-id` **ou** `--sprint`, seja na linha de comando ou no arquivo de configuração.
 \*\* **Nota:** O argumento `--rank-by` é obrigatório, seja via linha de comando ou no arquivo de configuração.
