@@ -1,10 +1,23 @@
 import argparse
 import json
 import os
+import sys
 import traceback
 import time
 from functools import cmp_to_key
 from jira import JIRA, JIRAError
+
+# Reconfigura o encoding da saída padrão no Windows para evitar quebras por caracteres especiais
+if hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+if hasattr(sys.stderr, 'reconfigure'):
+    try:
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 
 
 def check_and_handle_401(e):
@@ -27,7 +40,7 @@ def load_config(config_path):
     if not os.path.exists(config_path):
         print(f"Erro: Arquivo de configuração '{config_path}' não encontrado.")
         return None
-    with open(config_path, 'r') as f:
+    with open(config_path, 'r', encoding='utf-8') as f:
         return json.load(f)
 
 

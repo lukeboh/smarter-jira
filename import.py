@@ -7,6 +7,18 @@ import sys
 import argparse
 from datetime import datetime
 
+# Reconfigura o encoding da saída padrão no Windows para evitar quebras por caracteres especiais
+if hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+if hasattr(sys.stderr, 'reconfigure'):
+    try:
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
 LOG_HEADERS = ['issue_key', 'action', 'Issue ID', 'Parent ID', 'Summary', 'Description', 'Issue Type', 'Reporter', 'Assignee', 'Epic Link']
 
 # --- Funções Auxiliares ---
